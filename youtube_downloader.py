@@ -1,7 +1,5 @@
 import os
 import sys
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
 import yt_dlp
 import re
 
@@ -23,7 +21,7 @@ def extract_video_id(url):
 
 
 def download_transcript(video_url, output_dir='transcripts'):
-    """Download transcript from YouTube video."""
+    """Download transcript from YouTube video using yt-dlp."""
     try:
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -36,45 +34,75 @@ def download_transcript(video_url, output_dir='transcripts'):
 
         print(f"Downloading transcript for video: {video_id}")
 
-        # Try to get transcript (try multiple languages and auto-generated)
-        transcript = None
-        try:
-            # First try to get manually created transcripts
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # Use yt-dlp to download subtitles
+        output_file = os.path.join(output_dir, f"{video_id}_transcript")
 
-            # Try to get English transcript first
-            try:
-                transcript = transcript_list.find_transcript(['en']).fetch()
-            except:
-                # If no English, try to get any manually created transcript
-                try:
-                    transcript = transcript_list.find_manually_created_transcript().fetch()
-                except:
-                    # Finally, try auto-generated transcripts
-                    transcript = transcript_list.find_generated_transcript(['en']).fetch()
-        except:
-            # Fallback to simple get_transcript
-            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        ydl_opts = {
+            'skip_download': True,  # Don't download video
+            'writesubtitles': True,  # Download subtitles
+            'writeautomaticsub': True,  # Include auto-generated subs
+            'subtitleslangs': ['en'],  # Prefer English
+            'subtitlesformat': 'vtt',  # VTT format
+            'outtmpl': output_file,
+            'quiet': True,
+        }
 
-        if not transcript:
-            print("No transcript available for this video")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+
+        # yt-dlp saves as .vtt, convert to plain text
+        vtt_file = f"{output_file}.en.vtt"
+        txt_file = f"{output_file}.txt"
+
+        if os.path.exists(vtt_file):
+            # Read VTT and convert to plain text
+            with open(vtt_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Remove all VTT timing tags like <00:00:00.480> and <c>
+            content = re.sub(r'<[^>]+>', ' ', content)
+
+            # Split into lines
+            lines = content.split('\n')
+
+            # Extract only actual text content
+            text_lines = []
+            seen_lines = set()  # Track duplicates
+
+            for line in lines:
+                line = line.strip()
+
+                # Skip empty lines, WEBVTT header, timestamps, metadata, sound effects
+                if (not line or
+                    line.startswith('WEBVTT') or
+                    '-->' in line or
+                    line.isdigit() or
+                    line.startswith('Kind:') or
+                    line.startswith('Language:') or
+                    line.startswith('NOTE') or
+                    line.startswith('[') and line.endswith(']')):  # Skip [Music], [Applause], etc
+                    continue
+
+                # Only add unique non-empty lines to avoid duplicates
+                if line and line not in seen_lines:
+                    text_lines.append(line)
+                    seen_lines.add(line)
+
+            # Write plain text with proper spacing
+            with open(txt_file, 'w', encoding='utf-8') as f:
+                f.write(' '.join(text_lines))
+
+            # Remove VTT file
+            os.remove(vtt_file)
+
+            print(f"Transcript saved to: {txt_file}")
+            return txt_file
+        else:
+            print("No subtitles available for this video")
             return None
-
-        # Format transcript as plain text
-        formatter = TextFormatter()
-        text_formatted = formatter.format_transcript(transcript)
-
-        # Save to file
-        output_file = os.path.join(output_dir, f"{video_id}_transcript.txt")
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(text_formatted)
-
-        print(f"Transcript saved to: {output_file}")
-        return output_file
 
     except Exception as e:
         print(f"Error downloading transcript: {e}")
-        print("This video may not have captions/subtitles available")
         return None
 
 
