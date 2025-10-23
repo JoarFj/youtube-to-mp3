@@ -87,7 +87,6 @@ def download_audio(video_url, output_dir='downloads'):
         print(f"Downloading audio from: {video_url}")
 
         # Configure yt-dlp options with updated settings to avoid 403 errors
-        # Use mediaconnect client which is more reliable
         ydl_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -98,8 +97,6 @@ def download_audio(video_url, output_dir='downloads'):
             'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
             'quiet': False,
             'no_warnings': False,
-            # Use mediaconnect client which doesn't require PO tokens
-            'extractor_args': {'youtube': {'player_client': ['mediaconnect']}},
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
