@@ -1,2 +1,5 @@
 youtube-transcript-api==0.6.2
 yt-dlp==2025.10.22
+fastapi==0.115.6
+uvicorn==0.34.0
+aiofiles==24.1.0
