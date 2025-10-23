@@ -88,9 +88,17 @@ def download_transcript(video_url, output_dir='transcripts'):
                     text_lines.append(line)
                     seen_lines.add(line)
 
-            # Write plain text with proper spacing
+            # Clean up extra spaces and write as proper sentences
+            # Join with spaces, then clean up multiple spaces
+            full_text = ' '.join(text_lines)
+            # Replace multiple spaces with single space
+            full_text = re.sub(r'\s+', ' ', full_text)
+            # Add period at end if missing
+            if full_text and not full_text.endswith(('.', '!', '?')):
+                full_text += '.'
+
             with open(txt_file, 'w', encoding='utf-8') as f:
-                f.write(' '.join(text_lines))
+                f.write(full_text.strip())
 
             # Remove VTT file
             os.remove(vtt_file)
