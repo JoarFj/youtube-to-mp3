@@ -2,6 +2,7 @@ import os
 import sys
 import yt_dlp
 import re
+import config
 
 
 def clean_vtt_to_text(vtt_content):
@@ -70,9 +71,13 @@ def extract_video_id(url):
     return None
 
 
-def download_transcript(video_url, output_dir='transcripts'):
+def download_transcript(video_url, output_dir=None):
     """Download transcript from YouTube video using yt-dlp."""
     try:
+        # Use config default if not specified
+        if output_dir is None:
+            output_dir = config.TRANSCRIPTS_DIR
+
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
@@ -91,10 +96,10 @@ def download_transcript(video_url, output_dir='transcripts'):
             'skip_download': True,  # Don't download video
             'writesubtitles': True,  # Download subtitles
             'writeautomaticsub': True,  # Include auto-generated subs
-            'subtitleslangs': ['en'],  # Prefer English
-            'subtitlesformat': 'vtt',  # VTT format
+            'subtitleslangs': [config.SUBTITLE_LANGUAGE],
+            'subtitlesformat': config.SUBTITLE_FORMAT,
             'outtmpl': output_file,
-            'quiet': True,
+            'quiet': config.YT_DLP_QUIET,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -130,9 +135,13 @@ def download_transcript(video_url, output_dir='transcripts'):
         return None
 
 
-def download_audio(video_url, output_dir='downloads'):
+def download_audio(video_url, output_dir=None):
     """Download audio from YouTube video as MP3."""
     try:
+        # Use config default if not specified
+        if output_dir is None:
+            output_dir = config.DOWNLOADS_DIR
+
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
@@ -143,12 +152,12 @@ def download_audio(video_url, output_dir='downloads'):
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredcodec': config.AUDIO_FORMAT,
+                'preferredquality': config.AUDIO_QUALITY,
             }],
             'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
-            'quiet': False,
-            'no_warnings': False,
+            'quiet': config.YT_DLP_QUIET,
+            'no_warnings': config.YT_DLP_NO_WARNINGS,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

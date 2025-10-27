@@ -7,23 +7,24 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import youtube_downloader
 import logging
+import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="YouTube Transcript & Audio API",
-    description="Download YouTube video transcripts and convert videos to MP3",
-    version="1.0.0"
+    title=config.API_TITLE,
+    description=config.API_DESCRIPTION,
+    version=config.API_VERSION
 )
 
 # Set up templates
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 
 # Create directories
-os.makedirs("transcripts", exist_ok=True)
-os.makedirs("downloads", exist_ok=True)
+os.makedirs(config.TRANSCRIPTS_DIR, exist_ok=True)
+os.makedirs(config.DOWNLOADS_DIR, exist_ok=True)
 
 
 class YouTubeRequest(BaseModel):
@@ -112,7 +113,7 @@ async def download_youtube(request: YouTubeRequest):
 @app.get("/files/transcript/{video_id}")
 async def get_transcript(video_id: str):
     """Download transcript file."""
-    file_path = f"transcripts/{video_id}_transcript.txt"
+    file_path = f"{config.TRANSCRIPTS_DIR}/{video_id}_transcript.txt"
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Transcript file not found")
@@ -128,22 +129,20 @@ async def get_transcript(video_id: str):
 async def get_audio(video_id: str):
     """Download audio file."""
     # Find the MP3 file in downloads directory
-    downloads_dir = "downloads"
-
-    if not os.path.exists(downloads_dir):
+    if not os.path.exists(config.DOWNLOADS_DIR):
         raise HTTPException(status_code=404, detail="Downloads directory not found")
 
-    mp3_files = [f for f in os.listdir(downloads_dir) if f.endswith('.mp3')]
+    mp3_files = [f for f in os.listdir(config.DOWNLOADS_DIR) if f.endswith(f'.{config.AUDIO_FORMAT}')]
 
     # Find the most recent file (as a simple heuristic)
     if not mp3_files:
         raise HTTPException(status_code=404, detail="Audio file not found")
 
     # Get the most recently modified file
-    mp3_files_with_time = [(f, os.path.getmtime(os.path.join(downloads_dir, f))) for f in mp3_files]
+    mp3_files_with_time = [(f, os.path.getmtime(os.path.join(config.DOWNLOADS_DIR, f))) for f in mp3_files]
     mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
     audio_file = mp3_files_with_time[0][0]
-    file_path = os.path.join(downloads_dir, audio_file)
+    file_path = os.path.join(config.DOWNLOADS_DIR, audio_file)
 
     return FileResponse(
         path=file_path,
@@ -160,4 +159,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=config.API_HOST, port=config.API_PORT)
