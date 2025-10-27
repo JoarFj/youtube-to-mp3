@@ -4,6 +4,56 @@ import yt_dlp
 import re
 
 
+def clean_vtt_to_text(vtt_content):
+    """
+    Convert VTT subtitle content to clean plain text.
+
+    Args:
+        vtt_content: Raw VTT file content as string
+
+    Returns:
+        Clean text with duplicates and metadata removed
+    """
+    # Remove all VTT timing tags like <00:00:00.480> and <c>
+    content = re.sub(r'<[^>]+>', ' ', vtt_content)
+
+    # Split into lines
+    lines = content.split('\n')
+
+    # Extract only actual text content
+    text_lines = []
+    seen_lines = set()  # Track duplicates
+
+    for line in lines:
+        line = line.strip()
+
+        # Skip empty lines, WEBVTT header, timestamps, metadata, sound effects
+        if (not line or
+            line.startswith('WEBVTT') or
+            '-->' in line or
+            line.isdigit() or
+            line.startswith('Kind:') or
+            line.startswith('Language:') or
+            line.startswith('NOTE') or
+            line.startswith('[') and line.endswith(']')):  # Skip [Music], [Applause], etc
+            continue
+
+        # Only add unique non-empty lines to avoid duplicates
+        if line and line not in seen_lines:
+            text_lines.append(line)
+            seen_lines.add(line)
+
+    # Clean up extra spaces and format as proper text
+    full_text = ' '.join(text_lines)
+    # Replace multiple spaces with single space
+    full_text = re.sub(r'\s+', ' ', full_text)
+    # Add period at end if missing
+    if full_text and not full_text.endswith(('.', '!', '?')):
+        full_text += '.'
+
+    return full_text.strip()
+
+
 def extract_video_id(url):
     """Extract video ID from YouTube URL."""
     patterns = [
@@ -55,50 +105,16 @@ def download_transcript(video_url, output_dir='transcripts'):
         txt_file = f"{output_file}.txt"
 
         if os.path.exists(vtt_file):
-            # Read VTT and convert to plain text
+            # Read VTT file
             with open(vtt_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+                vtt_content = f.read()
 
-            # Remove all VTT timing tags like <00:00:00.480> and <c>
-            content = re.sub(r'<[^>]+>', ' ', content)
+            # Convert VTT to clean text using helper function
+            clean_text = clean_vtt_to_text(vtt_content)
 
-            # Split into lines
-            lines = content.split('\n')
-
-            # Extract only actual text content
-            text_lines = []
-            seen_lines = set()  # Track duplicates
-
-            for line in lines:
-                line = line.strip()
-
-                # Skip empty lines, WEBVTT header, timestamps, metadata, sound effects
-                if (not line or
-                    line.startswith('WEBVTT') or
-                    '-->' in line or
-                    line.isdigit() or
-                    line.startswith('Kind:') or
-                    line.startswith('Language:') or
-                    line.startswith('NOTE') or
-                    line.startswith('[') and line.endswith(']')):  # Skip [Music], [Applause], etc
-                    continue
-
-                # Only add unique non-empty lines to avoid duplicates
-                if line and line not in seen_lines:
-                    text_lines.append(line)
-                    seen_lines.add(line)
-
-            # Clean up extra spaces and write as proper sentences
-            # Join with spaces, then clean up multiple spaces
-            full_text = ' '.join(text_lines)
-            # Replace multiple spaces with single space
-            full_text = re.sub(r'\s+', ' ', full_text)
-            # Add period at end if missing
-            if full_text and not full_text.endswith(('.', '!', '?')):
-                full_text += '.'
-
+            # Write clean text to file
             with open(txt_file, 'w', encoding='utf-8') as f:
-                f.write(full_text.strip())
+                f.write(clean_text)
 
             # Remove VTT file
             os.remove(vtt_file)
