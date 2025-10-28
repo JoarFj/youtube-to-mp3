@@ -53,7 +53,7 @@ async def download_youtube(request: YouTubeRequest):
     Download YouTube video transcript, audio, and/or video.
 
     - **url**: YouTube video URL
-    - **download_type**: "transcript", "audio", "video", or "both" (transcript + audio)
+    - **download_type**: Comma-separated list: "transcript,audio,video" or combinations like "transcript,audio"
     """
     try:
         logger.info(f"Received download request for: {request.url}, type: {request.download_type}")
@@ -62,13 +62,20 @@ async def download_youtube(request: YouTubeRequest):
         if not video_id:
             raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
+        # Parse download types (support both legacy "both" and new comma-separated format)
+        download_types = []
+        if request.download_type == "both":
+            download_types = ["transcript", "audio"]
+        else:
+            download_types = [t.strip() for t in request.download_type.split(',')]
+
         transcript_file = None
         audio_file = None
         video_file = None
         messages = []
 
         # Download transcript
-        if request.download_type in ["transcript", "both"]:
+        if "transcript" in download_types:
             logger.info("Starting transcript download...")
             transcript_file = youtube_downloader.download_transcript(request.url)
             if transcript_file:
@@ -79,7 +86,7 @@ async def download_youtube(request: YouTubeRequest):
                 logger.warning("Transcript download failed")
 
         # Download audio
-        if request.download_type in ["audio", "both"]:
+        if "audio" in download_types:
             logger.info("Starting audio download...")
             audio_file = youtube_downloader.download_audio(request.url)
             if audio_file:
@@ -91,7 +98,7 @@ async def download_youtube(request: YouTubeRequest):
                 logger.warning("Audio download failed")
 
         # Download video
-        if request.download_type == "video":
+        if "video" in download_types:
             logger.info("Starting video download...")
             video_file = youtube_downloader.download_video(request.url)
             if video_file:

@@ -104,13 +104,21 @@
                 <input type="text" id="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
             </div>
             <div class="form-group">
-                <label for="downloadType">Download Type:</label>
-                <select id="downloadType" name="downloadType">
-                    <option value="both">Both (Transcript + Audio MP3)</option>
-                    <option value="transcript">Transcript Only</option>
-                    <option value="audio">Audio Only (MP3)</option>
-                    <option value="video">Video Only (MP4)</option>
-                </select>
+                <label>Select what to download:</label>
+                <div style="margin-top: 10px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" id="downloadTranscript" name="downloadTranscript" checked style="margin-right: 8px;">
+                        Transcript (Text)
+                    </label>
+                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" id="downloadAudio" name="downloadAudio" checked style="margin-right: 8px;">
+                        Audio (MP3)
+                    </label>
+                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" id="downloadVideo" name="downloadVideo" style="margin-right: 8px;">
+                        Video (MP4)
+                    </label>
+                </div>
             </div>
             <button type="submit" id="submitBtn">Download</button>
         </form>
@@ -129,7 +137,24 @@
             const result = document.getElementById('result');
 
             const url = document.getElementById('url').value;
-            const downloadType = document.getElementById('downloadType').value;
+            const downloadTranscript = document.getElementById('downloadTranscript').checked;
+            const downloadAudio = document.getElementById('downloadAudio').checked;
+            const downloadVideo = document.getElementById('downloadVideo').checked;
+
+            // Validate at least one option is selected
+            if (!downloadTranscript && !downloadAudio && !downloadVideo) {
+                result.style.display = 'block';
+                result.className = 'result error';
+                result.innerHTML = '<strong>Error:</strong><br>Please select at least one download option.';
+                return;
+            }
+
+            // Build download_type string
+            let downloadTypes = [];
+            if (downloadTranscript) downloadTypes.push('transcript');
+            if (downloadAudio) downloadTypes.push('audio');
+            if (downloadVideo) downloadTypes.push('video');
+            const downloadType = downloadTypes.join(',');
 
             // Reset and show loading
             result.style.display = 'none';
