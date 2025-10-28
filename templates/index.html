@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>YouTube Transcript & Audio Downloader</title>
+    <title>YouTube Transcript & Media Downloader</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -97,7 +97,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Transcript & Audio Downloader</h1>
+        <h1>YouTube Transcript & Media Downloader</h1>
         <form id="downloadForm">
             <div class="form-group">
                 <label for="url">YouTube URL:</label>
@@ -106,9 +106,10 @@
             <div class="form-group">
                 <label for="downloadType">Download Type:</label>
                 <select id="downloadType" name="downloadType">
-                    <option value="both">Both (Transcript + Audio)</option>
+                    <option value="both">Both (Transcript + Audio MP3)</option>
                     <option value="transcript">Transcript Only</option>
-                    <option value="audio">Audio Only</option>
+                    <option value="audio">Audio Only (MP3)</option>
+                    <option value="video">Video Only (MP4)</option>
                 </select>
             </div>
             <button type="submit" id="submitBtn">Download</button>
@@ -160,7 +161,10 @@
                         html += `<a href="/files/transcript/${data.video_id}" class="download-link" download>Download Transcript</a>`;
                     }
                     if (data.audio_file) {
-                        html += `<a href="/files/audio/${data.video_id}" class="download-link" download>Download Audio</a>`;
+                        html += `<a href="/files/audio/${data.video_id}" class="download-link" download>Download Audio (MP3)</a>`;
+                    }
+                    if (data.video_file) {
+                        html += `<a href="/files/video/${data.video_id}" class="download-link" download>Download Video (MP4)</a>`;
                     }
 
                     result.innerHTML = html;

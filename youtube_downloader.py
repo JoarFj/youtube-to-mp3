@@ -178,15 +178,67 @@ def download_audio(video_url, output_dir=None):
         return None
 
 
+def download_video(video_url, output_dir=None):
+    """Download video from YouTube as MP4 with audio."""
+    try:
+        # Use config default if not specified
+        if output_dir is None:
+            output_dir = config.DOWNLOADS_DIR
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        print(f"Downloading video from: {video_url}")
+
+        # Configure yt-dlp options for video download with audio
+        ydl_opts = {
+            # Download best video up to specified quality + best audio, merge them
+            'format': f'bestvideo[height<={config.VIDEO_QUALITY}]+bestaudio/best',
+            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+            'quiet': config.YT_DLP_QUIET,
+            'no_warnings': config.YT_DLP_NO_WARNINGS,
+            'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
+            'postprocessors': [{
+                'key': 'FFmpegVideoRemuxer',
+                'preferedformat': config.VIDEO_FORMAT,
+            }, {
+                'key': 'FFmpegMetadata',
+            }],
+            # Force re-encode audio to AAC for better MP4 compatibility
+            'postprocessor_args': {
+                'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
+            },
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            filename = ydl.prepare_filename(info)
+            # The final file should be MP4
+            mp4_filename = os.path.splitext(filename)[0] + f'.{config.VIDEO_FORMAT}'
+
+        print(f"Video saved to: {mp4_filename}")
+        return mp4_filename
+
+    except Exception as e:
+        print(f"Error downloading video: {e}")
+        print("\nTroubleshooting tips:")
+        print("1. Update yt-dlp: pip install --upgrade yt-dlp")
+        print("2. Some videos may be restricted or unavailable")
+        print("3. Make sure FFmpeg is installed for video merging")
+        return None
+
+
 def main():
     """Main function to handle command line arguments."""
     if len(sys.argv) < 2:
-        print("Usage: python youtube_downloader.py <youtube_url> [--transcript-only] [--audio-only]")
+        print("Usage: python youtube_downloader.py <youtube_url> [options]")
         print("\nOptions:")
         print("  --transcript-only    Download only the transcript")
-        print("  --audio-only         Download only the audio")
+        print("  --audio-only         Download only the audio (MP3)")
+        print("  --video-only         Download only the video (MP4)")
         print("\nExample:")
         print("  python youtube_downloader.py https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        print("  python youtube_downloader.py https://www.youtube.com/watch?v=dQw4w9WgXcQ --video-only")
         sys.exit(1)
 
     video_url = sys.argv[1]
@@ -194,14 +246,15 @@ def main():
     # Parse options
     transcript_only = '--transcript-only' in sys.argv
     audio_only = '--audio-only' in sys.argv
+    video_only = '--video-only' in sys.argv
 
-    # If no specific option is provided, download both
-    download_both = not transcript_only and not audio_only
+    # If no specific option is provided, download transcript and audio (original behavior)
+    download_default = not transcript_only and not audio_only and not video_only
 
     print(f"Processing video: {video_url}\n")
 
     # Download transcript
-    if transcript_only or download_both:
+    if transcript_only or download_default:
         transcript_file = download_transcript(video_url)
         if transcript_file:
             print(f"✓ Transcript downloaded successfully\n")
@@ -209,12 +262,20 @@ def main():
             print(f"✗ Failed to download transcript\n")
 
     # Download audio
-    if audio_only or download_both:
+    if audio_only or download_default:
         audio_file = download_audio(video_url)
         if audio_file:
             print(f"✓ Audio downloaded successfully\n")
         else:
             print(f"✗ Failed to download audio\n")
+
+    # Download video
+    if video_only:
+        video_file = download_video(video_url)
+        if video_file:
+            print(f"✓ Video downloaded successfully\n")
+        else:
+            print(f"✗ Failed to download video\n")
 
     print("Done!")
 

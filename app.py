@@ -29,7 +29,7 @@ os.makedirs(config.DOWNLOADS_DIR, exist_ok=True)
 
 class YouTubeRequest(BaseModel):
     url: str
-    download_type: str = "both"  # "transcript", "audio", or "both"
+    download_type: str = "both"  # "transcript", "audio", "video", or "both"
 
 
 class DownloadResponse(BaseModel):
@@ -37,6 +37,7 @@ class DownloadResponse(BaseModel):
     message: str
     transcript_file: Optional[str] = None
     audio_file: Optional[str] = None
+    video_file: Optional[str] = None
     video_id: Optional[str] = None
 
 
@@ -49,10 +50,10 @@ async def root(request: Request):
 @app.post("/download", response_model=DownloadResponse)
 async def download_youtube(request: YouTubeRequest):
     """
-    Download YouTube video transcript and/or audio.
+    Download YouTube video transcript, audio, and/or video.
 
     - **url**: YouTube video URL
-    - **download_type**: "transcript", "audio", or "both"
+    - **download_type**: "transcript", "audio", "video", or "both" (transcript + audio)
     """
     try:
         logger.info(f"Received download request for: {request.url}, type: {request.download_type}")
@@ -63,6 +64,7 @@ async def download_youtube(request: YouTubeRequest):
 
         transcript_file = None
         audio_file = None
+        video_file = None
         messages = []
 
         # Download transcript
@@ -76,12 +78,11 @@ async def download_youtube(request: YouTubeRequest):
                 messages.append("Transcript download failed (video may not have captions)")
                 logger.warning("Transcript download failed")
 
-        # Download audio - uses exact same logic as CLI
+        # Download audio
         if request.download_type in ["audio", "both"]:
             logger.info("Starting audio download...")
             audio_file = youtube_downloader.download_audio(request.url)
             if audio_file:
-                # Wait a moment to ensure file is fully written
                 time.sleep(2)
                 messages.append("Audio downloaded successfully")
                 logger.info(f"Audio saved: {audio_file}")
@@ -89,11 +90,23 @@ async def download_youtube(request: YouTubeRequest):
                 messages.append("Audio download failed")
                 logger.warning("Audio download failed")
 
+        # Download video
+        if request.download_type == "video":
+            logger.info("Starting video download...")
+            video_file = youtube_downloader.download_video(request.url)
+            if video_file:
+                time.sleep(2)
+                messages.append("Video downloaded successfully")
+                logger.info(f"Video saved: {video_file}")
+            else:
+                messages.append("Video download failed")
+                logger.warning("Video download failed")
+
         # Check if at least one succeeded
-        if not transcript_file and not audio_file:
+        if not transcript_file and not audio_file and not video_file:
             return DownloadResponse(
                 success=False,
-                message="Failed to download both transcript and audio. " + ". ".join(messages),
+                message="All downloads failed. " + ". ".join(messages),
                 video_id=video_id
             )
 
@@ -102,6 +115,7 @@ async def download_youtube(request: YouTubeRequest):
             message=". ".join(messages),
             transcript_file=transcript_file,
             audio_file=audio_file,
+            video_file=video_file,
             video_id=video_id
         )
 
@@ -148,6 +162,32 @@ async def get_audio(video_id: str):
         path=file_path,
         filename=audio_file,
         media_type="audio/mpeg"
+    )
+
+
+@app.get("/files/video/{video_id}")
+async def get_video(video_id: str):
+    """Download video file."""
+    # Find the MP4 file in downloads directory
+    if not os.path.exists(config.DOWNLOADS_DIR):
+        raise HTTPException(status_code=404, detail="Downloads directory not found")
+
+    video_files = [f for f in os.listdir(config.DOWNLOADS_DIR) if f.endswith(f'.{config.VIDEO_FORMAT}')]
+
+    # Find the most recent file (as a simple heuristic)
+    if not video_files:
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+    # Get the most recently modified file
+    video_files_with_time = [(f, os.path.getmtime(os.path.join(config.DOWNLOADS_DIR, f))) for f in video_files]
+    video_files_with_time.sort(key=lambda x: x[1], reverse=True)
+    video_file = video_files_with_time[0][0]
+    file_path = os.path.join(config.DOWNLOADS_DIR, video_file)
+
+    return FileResponse(
+        path=file_path,
+        filename=video_file,
+        media_type="video/mp4"
     )
 
 
