@@ -134,14 +134,24 @@ async def download_youtube(request: YouTubeRequest):
 @app.get("/files/transcript/{video_id}")
 async def get_transcript(video_id: str):
     """Download transcript file."""
-    file_path = f"{config.TRANSCRIPTS_DIR}/{video_id}_transcript.txt"
+    # Find the most recent transcript file
+    if not os.path.exists(config.TRANSCRIPTS_DIR):
+        raise HTTPException(status_code=404, detail="Transcripts directory not found")
 
-    if not os.path.exists(file_path):
+    transcript_files = [f for f in os.listdir(config.TRANSCRIPTS_DIR) if f.endswith('_transcript.txt')]
+
+    if not transcript_files:
         raise HTTPException(status_code=404, detail="Transcript file not found")
+
+    # Get the most recently modified file
+    transcript_files_with_time = [(f, os.path.getmtime(os.path.join(config.TRANSCRIPTS_DIR, f))) for f in transcript_files]
+    transcript_files_with_time.sort(key=lambda x: x[1], reverse=True)
+    transcript_file = transcript_files_with_time[0][0]
+    file_path = os.path.join(config.TRANSCRIPTS_DIR, transcript_file)
 
     return FileResponse(
         path=file_path,
-        filename=f"{video_id}_transcript.txt",
+        filename=transcript_file,
         media_type="text/plain"
     )
 

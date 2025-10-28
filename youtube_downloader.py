@@ -89,8 +89,8 @@ def download_transcript(video_url, output_dir=None):
 
         print(f"Downloading transcript for video: {video_id}")
 
-        # Use yt-dlp to download subtitles
-        output_file = os.path.join(output_dir, f"{video_id}_transcript")
+        # Use yt-dlp to download subtitles with video title as filename
+        output_file = os.path.join(output_dir, '%(title)s')
 
         ydl_opts = {
             'skip_download': True,  # Don't download video
@@ -104,10 +104,24 @@ def download_transcript(video_url, output_dir=None):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
+            # Get the actual title for the filename
+            title = info.get('title', video_id)
 
-        # yt-dlp saves as .vtt, convert to plain text
-        vtt_file = f"{output_file}.en.vtt"
-        txt_file = f"{output_file}.txt"
+        # yt-dlp saves as .vtt with title, find the file
+        # Look for recently created .vtt file
+        vtt_files = [f for f in os.listdir(output_dir) if f.endswith('.en.vtt')]
+        if not vtt_files:
+            print("No subtitles available for this video")
+            return None
+
+        # Get most recent vtt file
+        vtt_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in vtt_files]
+        vtt_files_with_time.sort(key=lambda x: x[1], reverse=True)
+        vtt_filename = vtt_files_with_time[0][0]
+        vtt_file = os.path.join(output_dir, vtt_filename)
+
+        # Create txt filename from vtt filename
+        txt_file = vtt_file.replace('.en.vtt', '_transcript.txt')
 
         if os.path.exists(vtt_file):
             # Read VTT file
