@@ -149,17 +149,19 @@ def download_transcript(video_url, output_dir=None):
         return None
 
 
-def download_audio(video_url, output_dir=None):
+def download_audio(video_url, output_dir=None, audio_quality=None):
     """Download audio from YouTube video as MP3."""
     try:
         # Use config default if not specified
         if output_dir is None:
             output_dir = config.DOWNLOADS_DIR
+        if audio_quality is None:
+            audio_quality = config.AUDIO_QUALITY
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Downloading audio from: {video_url}")
+        print(f"Downloading audio from: {video_url} (quality: {audio_quality} kbps)")
 
         # Configure yt-dlp options with updated settings to avoid 403 errors
         ydl_opts = {
@@ -167,18 +169,28 @@ def download_audio(video_url, output_dir=None):
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': config.AUDIO_FORMAT,
-                'preferredquality': config.AUDIO_QUALITY,
+                'preferredquality': audio_quality,
             }],
-            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(output_dir, f'%(title)s_audio_{audio_quality}kbps.%(ext)s'),
             'quiet': config.YT_DLP_QUIET,
             'no_warnings': config.YT_DLP_NO_WARNINGS,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            filename = ydl.prepare_filename(info)
-            # Replace extension with mp3
-            mp3_filename = os.path.splitext(filename)[0] + '.mp3'
+            title = info.get('title', 'video')
+            # Build the actual filename that was created
+            mp3_filename = os.path.join(output_dir, f'{title}_audio_{audio_quality}kbps.mp3')
+
+        # Verify file exists
+        if not os.path.exists(mp3_filename):
+            print(f"Warning: Expected file not found, searching for created file...")
+            # Fallback: find the most recent mp3 with the quality marker
+            mp3_files = [f for f in os.listdir(output_dir) if f.endswith(f'_audio_{audio_quality}kbps.mp3')]
+            if mp3_files:
+                mp3_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp3_files]
+                mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
+                mp3_filename = os.path.join(output_dir, mp3_files_with_time[0][0])
 
         print(f"Audio saved to: {mp3_filename}")
         return mp3_filename
@@ -192,23 +204,25 @@ def download_audio(video_url, output_dir=None):
         return None
 
 
-def download_video(video_url, output_dir=None):
+def download_video(video_url, output_dir=None, video_quality=None):
     """Download video from YouTube as MP4 with audio."""
     try:
         # Use config default if not specified
         if output_dir is None:
             output_dir = config.DOWNLOADS_DIR
+        if video_quality is None:
+            video_quality = config.VIDEO_QUALITY
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Downloading video from: {video_url}")
+        print(f"Downloading video from: {video_url} (quality: {video_quality}p)")
 
         # Configure yt-dlp options for video download with audio
         ydl_opts = {
             # Download best video up to specified quality + best audio, merge them
-            'format': f'bestvideo[height<={config.VIDEO_QUALITY}]+bestaudio/best',
-            'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),
+            'format': f'bestvideo[height<={video_quality}]+bestaudio/best',
+            'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
             'quiet': config.YT_DLP_QUIET,
             'no_warnings': config.YT_DLP_NO_WARNINGS,
             'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
@@ -226,9 +240,19 @@ def download_video(video_url, output_dir=None):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            filename = ydl.prepare_filename(info)
-            # The final file should be MP4
-            mp4_filename = os.path.splitext(filename)[0] + f'.{config.VIDEO_FORMAT}'
+            title = info.get('title', 'video')
+            # Build the actual filename that was created
+            mp4_filename = os.path.join(output_dir, f'{title}_video_{video_quality}p.{config.VIDEO_FORMAT}')
+
+        # Verify file exists
+        if not os.path.exists(mp4_filename):
+            print(f"Warning: Expected file not found, searching for created file...")
+            # Fallback: find the most recent mp4 with the quality marker
+            mp4_files = [f for f in os.listdir(output_dir) if f.endswith(f'_video_{video_quality}p.{config.VIDEO_FORMAT}')]
+            if mp4_files:
+                mp4_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp4_files]
+                mp4_files_with_time.sort(key=lambda x: x[1], reverse=True)
+                mp4_filename = os.path.join(output_dir, mp4_files_with_time[0][0])
 
         print(f"Video saved to: {mp4_filename}")
         return mp4_filename

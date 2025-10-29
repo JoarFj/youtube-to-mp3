@@ -110,14 +110,30 @@
                         <input type="checkbox" id="downloadTranscript" name="downloadTranscript" checked style="margin-right: 8px;">
                         Transcript (Text)
                     </label>
-                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
-                        <input type="checkbox" id="downloadAudio" name="downloadAudio" checked style="margin-right: 8px;">
-                        Audio (MP3)
-                    </label>
-                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
-                        <input type="checkbox" id="downloadVideo" name="downloadVideo" style="margin-right: 8px;">
-                        Video (MP4)
-                    </label>
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <label style="display: inline-flex; align-items: center; font-weight: normal; cursor: pointer; flex: 1;">
+                            <input type="checkbox" id="downloadAudio" name="downloadAudio" checked style="margin-right: 8px;">
+                            Audio (MP3)
+                        </label>
+                        <select id="audioQuality" name="audioQuality" style="width: 120px; margin-left: 10px;">
+                            <option value="128">128 kbps</option>
+                            <option value="192" selected>192 kbps</option>
+                            <option value="256">256 kbps</option>
+                            <option value="320">320 kbps</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <label style="display: inline-flex; align-items: center; font-weight: normal; cursor: pointer; flex: 1;">
+                            <input type="checkbox" id="downloadVideo" name="downloadVideo" style="margin-right: 8px;">
+                            Video (MP4)
+                        </label>
+                        <select id="videoQuality" name="videoQuality" style="width: 120px; margin-left: 10px;">
+                            <option value="360">360p</option>
+                            <option value="480">480p</option>
+                            <option value="720" selected>720p</option>
+                            <option value="1080">1080p</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <button type="submit" id="submitBtn">Download</button>
@@ -140,6 +156,8 @@
             const downloadTranscript = document.getElementById('downloadTranscript').checked;
             const downloadAudio = document.getElementById('downloadAudio').checked;
             const downloadVideo = document.getElementById('downloadVideo').checked;
+            const audioQuality = document.getElementById('audioQuality').value;
+            const videoQuality = document.getElementById('videoQuality').value;
 
             // Validate at least one option is selected
             if (!downloadTranscript && !downloadAudio && !downloadVideo) {
@@ -169,7 +187,9 @@
                     },
                     body: JSON.stringify({
                         url: url,
-                        download_type: downloadType
+                        download_type: downloadType,
+                        audio_quality: downloadAudio ? audioQuality : null,
+                        video_quality: downloadVideo ? videoQuality : null
                     })
                 });
 
@@ -183,13 +203,13 @@
                     let html = '<strong>Success!</strong><br>' + data.message + '<br><br>';
 
                     if (data.transcript_file) {
-                        html += `<a href="/files/transcript/${data.video_id}" class="download-link" download>Download Transcript</a>`;
+                        html += `<a href="/files/transcript/${encodeURIComponent(data.transcript_file)}" class="download-link" download>Download Transcript</a>`;
                     }
                     if (data.audio_file) {
-                        html += `<a href="/files/audio/${data.video_id}" class="download-link" download>Download Audio (MP3)</a>`;
+                        html += `<a href="/files/audio/${encodeURIComponent(data.audio_file)}" class="download-link" download>Download Audio (MP3)</a>`;
                     }
                     if (data.video_file) {
-                        html += `<a href="/files/video/${data.video_id}" class="download-link" download>Download Video (MP4)</a>`;
+                        html += `<a href="/files/video/${encodeURIComponent(data.video_file)}" class="download-link" download>Download Video (MP4)</a>`;
                     }
 
                     result.innerHTML = html;

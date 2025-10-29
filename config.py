@@ -12,10 +12,12 @@ TEMPLATES_DIR = os.getenv('TEMPLATES_DIR', 'templates')
 # Audio settings
 AUDIO_QUALITY = os.getenv('AUDIO_QUALITY', '192')  # kbps
 AUDIO_FORMAT = os.getenv('AUDIO_FORMAT', 'mp3')
+AUDIO_QUALITY_OPTIONS = ['128', '192', '256', '320']  # Available audio quality options in kbps
 
 # Video settings
 VIDEO_FORMAT = os.getenv('VIDEO_FORMAT', 'mp4')
 VIDEO_QUALITY = os.getenv('VIDEO_QUALITY', '720')  # 720p, 1080p, best, etc.
+VIDEO_QUALITY_OPTIONS = ['360', '480', '720', '1080']  # Available video quality options
 
 # Subtitle settings
 SUBTITLE_LANGUAGE = os.getenv('SUBTITLE_LANGUAGE', 'en')

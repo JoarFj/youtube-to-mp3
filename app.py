@@ -30,6 +30,8 @@ os.makedirs(config.DOWNLOADS_DIR, exist_ok=True)
 class YouTubeRequest(BaseModel):
     url: str
     download_type: str = "both"  # "transcript", "audio", "video", or "both"
+    audio_quality: Optional[str] = None  # Audio quality in kbps (128, 192, 256, 320)
+    video_quality: Optional[str] = None  # Video quality (360, 480, 720, 1080)
 
 
 class DownloadResponse(BaseModel):
@@ -88,10 +90,11 @@ async def download_youtube(request: YouTubeRequest):
         # Download audio
         if "audio" in download_types:
             logger.info("Starting audio download...")
-            audio_file = youtube_downloader.download_audio(request.url)
+            audio_quality = request.audio_quality if request.audio_quality else config.AUDIO_QUALITY
+            audio_file = youtube_downloader.download_audio(request.url, audio_quality=audio_quality)
             if audio_file:
                 time.sleep(2)
-                messages.append("Audio downloaded successfully")
+                messages.append(f"Audio downloaded successfully ({audio_quality} kbps)")
                 logger.info(f"Audio saved: {audio_file}")
             else:
                 messages.append("Audio download failed")
@@ -100,10 +103,11 @@ async def download_youtube(request: YouTubeRequest):
         # Download video
         if "video" in download_types:
             logger.info("Starting video download...")
-            video_file = youtube_downloader.download_video(request.url)
+            video_quality = request.video_quality if request.video_quality else config.VIDEO_QUALITY
+            video_file = youtube_downloader.download_video(request.url, video_quality=video_quality)
             if video_file:
                 time.sleep(2)
-                messages.append("Video downloaded successfully")
+                messages.append(f"Video downloaded successfully ({video_quality}p)")
                 logger.info(f"Video saved: {video_file}")
             else:
                 messages.append("Video download failed")
@@ -120,9 +124,9 @@ async def download_youtube(request: YouTubeRequest):
         return DownloadResponse(
             success=True,
             message=". ".join(messages),
-            transcript_file=transcript_file,
-            audio_file=audio_file,
-            video_file=video_file,
+            transcript_file=os.path.basename(transcript_file) if transcript_file else None,
+            audio_file=os.path.basename(audio_file) if audio_file else None,
+            video_file=os.path.basename(video_file) if video_file else None,
             video_id=video_id
         )
 
@@ -131,79 +135,56 @@ async def download_youtube(request: YouTubeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/files/transcript/{video_id}")
-async def get_transcript(video_id: str):
+@app.get("/files/transcript/{filename}")
+async def get_transcript(filename: str):
     """Download transcript file."""
-    # Find the most recent transcript file
     if not os.path.exists(config.TRANSCRIPTS_DIR):
         raise HTTPException(status_code=404, detail="Transcripts directory not found")
 
-    transcript_files = [f for f in os.listdir(config.TRANSCRIPTS_DIR) if f.endswith('_transcript.txt')]
+    file_path = os.path.join(config.TRANSCRIPTS_DIR, filename)
 
-    if not transcript_files:
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Transcript file not found")
-
-    # Get the most recently modified file
-    transcript_files_with_time = [(f, os.path.getmtime(os.path.join(config.TRANSCRIPTS_DIR, f))) for f in transcript_files]
-    transcript_files_with_time.sort(key=lambda x: x[1], reverse=True)
-    transcript_file = transcript_files_with_time[0][0]
-    file_path = os.path.join(config.TRANSCRIPTS_DIR, transcript_file)
 
     return FileResponse(
         path=file_path,
-        filename=transcript_file,
+        filename=filename,
         media_type="text/plain"
     )
 
 
-@app.get("/files/audio/{video_id}")
-async def get_audio(video_id: str):
+@app.get("/files/audio/{filename}")
+async def get_audio(filename: str):
     """Download audio file."""
-    # Find the MP3 file in downloads directory
     if not os.path.exists(config.DOWNLOADS_DIR):
         raise HTTPException(status_code=404, detail="Downloads directory not found")
 
-    mp3_files = [f for f in os.listdir(config.DOWNLOADS_DIR) if f.endswith(f'.{config.AUDIO_FORMAT}')]
+    file_path = os.path.join(config.DOWNLOADS_DIR, filename)
 
-    # Find the most recent file (as a simple heuristic)
-    if not mp3_files:
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Audio file not found")
-
-    # Get the most recently modified file
-    mp3_files_with_time = [(f, os.path.getmtime(os.path.join(config.DOWNLOADS_DIR, f))) for f in mp3_files]
-    mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
-    audio_file = mp3_files_with_time[0][0]
-    file_path = os.path.join(config.DOWNLOADS_DIR, audio_file)
 
     return FileResponse(
         path=file_path,
-        filename=audio_file,
+        filename=filename,
         media_type="audio/mpeg"
     )
 
 
-@app.get("/files/video/{video_id}")
-async def get_video(video_id: str):
+@app.get("/files/video/{filename}")
+async def get_video(filename: str):
     """Download video file."""
-    # Find the MP4 file in downloads directory
     if not os.path.exists(config.DOWNLOADS_DIR):
         raise HTTPException(status_code=404, detail="Downloads directory not found")
 
-    video_files = [f for f in os.listdir(config.DOWNLOADS_DIR) if f.endswith(f'.{config.VIDEO_FORMAT}')]
+    file_path = os.path.join(config.DOWNLOADS_DIR, filename)
 
-    # Find the most recent file (as a simple heuristic)
-    if not video_files:
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Video file not found")
-
-    # Get the most recently modified file
-    video_files_with_time = [(f, os.path.getmtime(os.path.join(config.DOWNLOADS_DIR, f))) for f in video_files]
-    video_files_with_time.sort(key=lambda x: x[1], reverse=True)
-    video_file = video_files_with_time[0][0]
-    file_path = os.path.join(config.DOWNLOADS_DIR, video_file)
 
     return FileResponse(
         path=file_path,
-        filename=video_file,
+        filename=filename,
         media_type="video/mp4"
     )
 
