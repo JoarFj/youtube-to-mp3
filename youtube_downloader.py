@@ -138,6 +138,9 @@ def download_transcript(video_url, output_dir=None):
             # Remove VTT file
             os.remove(vtt_file)
 
+            # Update file timestamp to current time (resets age for cleanup purposes)
+            os.utime(txt_file, None)
+
             print(f"Transcript saved to: {txt_file}")
             return txt_file
         else:
@@ -191,6 +194,10 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
                 mp3_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp3_files]
                 mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
                 mp3_filename = os.path.join(output_dir, mp3_files_with_time[0][0])
+
+        # Update file timestamp to current time (resets age for cleanup purposes)
+        if os.path.exists(mp3_filename):
+            os.utime(mp3_filename, None)
 
         print(f"Audio saved to: {mp3_filename}")
         return mp3_filename
@@ -253,6 +260,10 @@ def download_video(video_url, output_dir=None, video_quality=None):
                 mp4_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp4_files]
                 mp4_files_with_time.sort(key=lambda x: x[1], reverse=True)
                 mp4_filename = os.path.join(output_dir, mp4_files_with_time[0][0])
+
+        # Update file timestamp to current time (resets age for cleanup purposes)
+        if os.path.exists(mp4_filename):
+            os.utime(mp4_filename, None)
 
         print(f"Video saved to: {mp4_filename}")
         return mp4_filename

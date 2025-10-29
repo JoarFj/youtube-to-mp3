@@ -33,3 +33,7 @@ API_VERSION = "1.0.0"
 # yt-dlp settings
 YT_DLP_QUIET = True
 YT_DLP_NO_WARNINGS = False
+
+# Cleanup settings
+FILE_RETENTION_MINUTES = int(os.getenv('FILE_RETENTION_MINUTES', '1'))  # How long to keep files before auto-deletion
+CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', '60'))  # How often to run cleanup task

@@ -1,10 +1,12 @@
 import os
 import time
+import asyncio
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import youtube_downloader
 import logging
 import config
@@ -13,10 +15,62 @@ import config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+async def cleanup_old_files():
+    """Background task to delete files older than FILE_RETENTION_MINUTES."""
+    while True:
+        try:
+            await asyncio.sleep(config.CLEANUP_INTERVAL_SECONDS)
+
+            current_time = time.time()
+            retention_seconds = config.FILE_RETENTION_MINUTES * 60
+
+            # Clean up downloads directory (audio and video)
+            if os.path.exists(config.DOWNLOADS_DIR):
+                for filename in os.listdir(config.DOWNLOADS_DIR):
+                    file_path = os.path.join(config.DOWNLOADS_DIR, filename)
+                    if os.path.isfile(file_path):
+                        file_age = current_time - os.path.getmtime(file_path)
+                        if file_age > retention_seconds:
+                            os.remove(file_path)
+                            logger.info(f"Deleted old file: {filename} (age: {file_age/60:.1f} minutes)")
+
+            # Clean up transcripts directory
+            if os.path.exists(config.TRANSCRIPTS_DIR):
+                for filename in os.listdir(config.TRANSCRIPTS_DIR):
+                    file_path = os.path.join(config.TRANSCRIPTS_DIR, filename)
+                    if os.path.isfile(file_path):
+                        file_age = current_time - os.path.getmtime(file_path)
+                        if file_age > retention_seconds:
+                            os.remove(file_path)
+                            logger.info(f"Deleted old transcript: {filename} (age: {file_age/60:.1f} minutes)")
+
+        except Exception as e:
+            logger.error(f"Error in cleanup task: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage app lifespan - start background tasks on startup."""
+    # Start cleanup task
+    cleanup_task = asyncio.create_task(cleanup_old_files())
+    logger.info(f"Started file cleanup task (retention: {config.FILE_RETENTION_MINUTES} minutes, interval: {config.CLEANUP_INTERVAL_SECONDS} seconds)")
+
+    yield
+
+    # Cleanup on shutdown
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+
+
 app = FastAPI(
     title=config.API_TITLE,
     description=config.API_DESCRIPTION,
-    version=config.API_VERSION
+    version=config.API_VERSION,
+    lifespan=lifespan
 )
 
 # Set up templates
