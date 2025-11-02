@@ -189,57 +189,45 @@ async def download_youtube(request: YouTubeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/files/transcript/{filename}")
-async def get_transcript(filename: str):
-    """Download transcript file."""
-    if not os.path.exists(config.TRANSCRIPTS_DIR):
-        raise HTTPException(status_code=404, detail="Transcripts directory not found")
+@app.get("/files/{file_type}/{filename}")
+async def get_file(file_type: str, filename: str):
+    """Download file (transcript, audio, or video)."""
+    # Map file types to their directories and media types
+    file_config = {
+        "transcript": {
+            "dir": config.TRANSCRIPTS_DIR,
+            "media_type": "text/plain"
+        },
+        "audio": {
+            "dir": config.DOWNLOADS_DIR,
+            "media_type": "audio/mpeg"
+        },
+        "video": {
+            "dir": config.DOWNLOADS_DIR,
+            "media_type": "video/mp4"
+        }
+    }
 
-    file_path = os.path.join(config.TRANSCRIPTS_DIR, filename)
+    # Validate file type
+    if file_type not in file_config:
+        raise HTTPException(status_code=400, detail=f"Invalid file type: {file_type}")
 
+    file_dir = file_config[file_type]["dir"]
+    media_type = file_config[file_type]["media_type"]
+
+    # Check directory exists
+    if not os.path.exists(file_dir):
+        raise HTTPException(status_code=404, detail=f"{file_type.capitalize()} directory not found")
+
+    # Build and verify file path
+    file_path = os.path.join(file_dir, filename)
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Transcript file not found")
+        raise HTTPException(status_code=404, detail=f"{file_type.capitalize()} file not found")
 
     return FileResponse(
         path=file_path,
         filename=filename,
-        media_type="text/plain"
-    )
-
-
-@app.get("/files/audio/{filename}")
-async def get_audio(filename: str):
-    """Download audio file."""
-    if not os.path.exists(config.DOWNLOADS_DIR):
-        raise HTTPException(status_code=404, detail="Downloads directory not found")
-
-    file_path = os.path.join(config.DOWNLOADS_DIR, filename)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Audio file not found")
-
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type="audio/mpeg"
-    )
-
-
-@app.get("/files/video/{filename}")
-async def get_video(filename: str):
-    """Download video file."""
-    if not os.path.exists(config.DOWNLOADS_DIR):
-        raise HTTPException(status_code=404, detail="Downloads directory not found")
-
-    file_path = os.path.join(config.DOWNLOADS_DIR, filename)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Video file not found")
-
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type="video/mp4"
+        media_type=media_type
     )
 
 
