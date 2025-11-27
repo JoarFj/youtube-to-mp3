@@ -1,147 +1,261 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>YouTube Transcript & Media Downloader</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaWizard 98</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
+        /* --- RETRO Y2K STYLES --- */
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
+            background-color: #008080; /* Classic Teal */
+            font-family: 'VT323', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
             padding: 20px;
-            background-color: #f5f5f5;
         }
-        .container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+
+        /* Window Container */
+        .window {
+            background: #c0c0c0;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 2px 2px 0px #000;
+            border-top: 2px solid #fff;
+            border-left: 2px solid #fff;
+            border-right: 2px solid #404040;
+            border-bottom: 2px solid #404040;
+            display: flex;
+            flex-direction: column;
         }
-        h1 {
-            color: #333;
-            text-align: center;
+
+        /* Title Bar */
+        .title-bar {
+            background: linear-gradient(90deg, #000080, #1084d0);
+            padding: 3px 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 2px;
         }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
+
+        .title-bar-text {
+            color: white;
             font-weight: bold;
-            color: #555;
+            font-size: 20px;
+            letter-spacing: 1px;
+            padding-left: 5px;
         }
+
+        .title-bar-controls button {
+            width: 20px;
+            height: 20px;
+            min-width: 20px;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            line-height: 10px;
+            background: #c0c0c0;
+            border-top: 1px solid #fff;
+            border-left: 1px solid #fff;
+            border-right: 1px solid #000;
+            border-bottom: 1px solid #000;
+            box-shadow: none;
+            margin-left: 2px;
+        }
+
+        .title-bar-controls button:active {
+            border-top: 1px solid #000;
+            border-left: 1px solid #000;
+            border-right: 1px solid #fff;
+            border-bottom: 1px solid #fff;
+        }
+
+        /* Window Body */
+        .window-body {
+            padding: 16px;
+            font-size: 20px;
+        }
+
+        /* Fieldsets (Group Boxes) */
+        fieldset {
+            border: 2px solid #808080;
+            border-style: groove;
+            margin-bottom: 15px;
+            padding: 10px 15px;
+        }
+
+        legend {
+            padding: 0 5px;
+            font-size: 20px;
+        }
+
+        /* Inputs & Selects */
+        .form-row {
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        label {
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
         input[type="text"] {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            padding: 4px 6px;
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            border-top: 2px solid #404040;
+            border-left: 2px solid #404040;
+            border-right: 2px solid #fff;
+            border-bottom: 2px solid #fff;
+            box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #dfdfdf;
+            background: white;
             box-sizing: border-box;
         }
+
         select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            padding: 2px 5px;
+            background: #fff;
+            border-top: 2px solid #404040;
+            border-left: 2px solid #404040;
+            border-right: 2px solid #fff;
+            border-bottom: 2px solid #fff;
+            margin-left: 10px;
         }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 5px;
+
+        /* Main Button */
+        button#submitBtn {
+            font-family: 'VT323', monospace;
+            font-size: 24px;
+            padding: 6px 20px;
+            width: 100%;
+            background: #c0c0c0;
+            border-top: 2px solid #fff;
+            border-left: 2px solid #fff;
+            border-right: 2px solid #000;
+            border-bottom: 2px solid #000;
             cursor: pointer;
-            font-size: 16px;
-            width: 100%;
+            margin-top: 10px;
+            box-shadow: 1px 1px 0px #000;
         }
-        button:hover {
-            background-color: #45a049;
+
+        button#submitBtn:active {
+            border-top: 2px solid #000;
+            border-left: 2px solid #000;
+            border-right: 2px solid #fff;
+            border-bottom: 2px solid #fff;
+            transform: translate(1px, 1px);
+            box-shadow: none;
         }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
+        
+        button#submitBtn:disabled {
+            color: #808080;
+            cursor: wait;
         }
-        .result {
+
+        /* Status & Results */
+        .status-bar {
             margin-top: 20px;
-            padding: 15px;
-            border-radius: 5px;
-            display: none;
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #fff;
+            border-bottom: 2px solid #fff;
+            padding: 5px;
+            background: #c0c0c0;
+            min-height: 30px;
+            font-size: 18px;
         }
-        .success {
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            color: #155724;
-        }
-        .error {
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            color: #721c24;
-        }
-        .loading {
-            text-align: center;
-            color: #666;
-            margin-top: 20px;
-            display: none;
-        }
+
         .download-link {
             display: inline-block;
-            margin: 10px 10px 10px 0;
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
+            margin: 5px 5px 5px 0;
+            color: blue;
+            text-decoration: underline;
+            cursor: pointer;
         }
         .download-link:hover {
-            background-color: #0056b3;
+            background-color: #000080;
+            color: white;
         }
+
+        .error-msg { color: red; font-weight: bold; }
+        .success-msg { color: #000080; font-weight: bold; }
+
+        /* Utilitites */
+        .hidden { display: none; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>YouTube Transcript & Media Downloader</h1>
-        <form id="downloadForm">
-            <div class="form-group">
-                <label for="url">YouTube URL:</label>
-                <input type="text" id="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required>
+
+    <div class="window">
+        <div class="title-bar">
+            <div class="title-bar-text">MediaWizard.exe</div>
+            <div class="title-bar-controls">
+                <button aria-label="Minimize">_</button>
+                <button aria-label="Maximize">□</button>
+                <button aria-label="Close">X</button>
             </div>
-            <div class="form-group">
-                <label>Select what to download:</label>
-                <div style="margin-top: 10px;">
-                    <label style="display: block; margin-bottom: 10px; font-weight: normal; cursor: pointer;">
-                        <input type="checkbox" id="downloadTranscript" name="downloadTranscript" checked style="margin-right: 8px;">
-                        Transcript (Text)
-                    </label>
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <label style="display: inline-flex; align-items: center; font-weight: normal; cursor: pointer; flex: 1;">
-                            <input type="checkbox" id="downloadAudio" name="downloadAudio" checked style="margin-right: 8px;">
-                            Audio (MP3)
-                        </label>
-                        <select id="audioQuality" name="audioQuality" style="width: 120px; margin-left: 10px;">
-                            <option value="128">128 kbps</option>
-                            <option value="192" selected>192 kbps</option>
-                            <option value="256">256 kbps</option>
-                            <option value="320">320 kbps</option>
+        </div>
+        
+        <div class="window-body">
+            <form id="downloadForm">
+                <fieldset>
+                    <legend>Source Input</legend>
+                    <div class="form-row">
+                        <label for="url">URL:</label>
+                        <input type="text" id="url" name="url" placeholder="https://www.youtube.com/..." required>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Output Settings</legend>
+                    
+                    <div class="form-row">
+                        <input type="checkbox" id="downloadTranscript" name="downloadTranscript" checked>
+                        <label for="downloadTranscript">Extract Transcript (.txt)</label>
+                    </div>
+
+                    <div class="form-row">
+                        <input type="checkbox" id="downloadAudio" name="downloadAudio" checked>
+                        <label for="downloadAudio">Extract Audio (.mp3)</label>
+                        <select id="audioQuality" name="audioQuality">
+                            <option value="128">128 kbps (Low)</option>
+                            <option value="192" selected>192 kbps (CD)</option>
+                            <option value="256">256 kbps (High)</option>
+                            <option value="320">320 kbps (Max)</option>
                         </select>
                     </div>
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <label style="display: inline-flex; align-items: center; font-weight: normal; cursor: pointer; flex: 1;">
-                            <input type="checkbox" id="downloadVideo" name="downloadVideo" style="margin-right: 8px;">
-                            Video (MP4)
-                        </label>
-                        <select id="videoQuality" name="videoQuality" style="width: 120px; margin-left: 10px;">
+
+                    <div class="form-row">
+                        <input type="checkbox" id="downloadVideo" name="downloadVideo">
+                        <label for="downloadVideo">Extract Video (.mp4)</label>
+                        <select id="videoQuality" name="videoQuality">
                             <option value="360">360p</option>
                             <option value="480">480p</option>
-                            <option value="720" selected>720p</option>
-                            <option value="1080">1080p</option>
+                            <option value="720" selected>720p (HD)</option>
+                            <option value="1080">1080p (FHD)</option>
                         </select>
                     </div>
-                </div>
+                </fieldset>
+
+                <button type="submit" id="submitBtn">Start Download</button>
+            </form>
+
+            <div id="statusArea" class="status-bar hidden">
+                <span id="statusText">Ready.</span>
+                <div id="resultContent"></div>
             </div>
-            <button type="submit" id="submitBtn">Download</button>
-        </form>
-        <div class="loading" id="loading">
-            Processing... This may take a minute...
         </div>
-        <div class="result" id="result"></div>
     </div>
 
     <script>
@@ -149,9 +263,11 @@
             e.preventDefault();
 
             const submitBtn = document.getElementById('submitBtn');
-            const loading = document.getElementById('loading');
-            const result = document.getElementById('result');
+            const statusArea = document.getElementById('statusArea');
+            const statusText = document.getElementById('statusText');
+            const resultContent = document.getElementById('resultContent');
 
+            // Inputs
             const url = document.getElementById('url').value;
             const downloadTranscript = document.getElementById('downloadTranscript').checked;
             const downloadAudio = document.getElementById('downloadAudio').checked;
@@ -159,32 +275,32 @@
             const audioQuality = document.getElementById('audioQuality').value;
             const videoQuality = document.getElementById('videoQuality').value;
 
-            // Validate at least one option is selected
+            // Validation
             if (!downloadTranscript && !downloadAudio && !downloadVideo) {
-                result.style.display = 'block';
-                result.className = 'result error';
-                result.innerHTML = '<strong>Error:</strong><br>Please select at least one download option.';
+                statusArea.classList.remove('hidden');
+                statusText.innerHTML = '<span class="error-msg">Error: Select at least one format.</span>';
+                resultContent.innerHTML = '';
                 return;
             }
 
-            // Build download_type string
+            // Prepare Request
             let downloadTypes = [];
             if (downloadTranscript) downloadTypes.push('transcript');
             if (downloadAudio) downloadTypes.push('audio');
             if (downloadVideo) downloadTypes.push('video');
             const downloadType = downloadTypes.join(',');
 
-            // Reset and show loading
-            result.style.display = 'none';
-            loading.style.display = 'block';
+            // UI Loading State
+            statusArea.classList.remove('hidden');
+            resultContent.innerHTML = '';
+            statusText.innerText = 'Processing... Please wait...';
             submitBtn.disabled = true;
+            submitBtn.innerText = "Downloading...";
 
             try {
                 const response = await fetch('/download', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: url,
                         download_type: downloadType,
@@ -195,35 +311,29 @@
 
                 const data = await response.json();
 
-                loading.style.display = 'none';
-                result.style.display = 'block';
-
                 if (data.success) {
-                    result.className = 'result success';
-                    let html = '<strong>Success!</strong><br>' + data.message + '<br><br>';
+                    statusText.innerHTML = '<span class="success-msg">Done! Files ready:</span>';
+                    let html = '';
 
                     if (data.transcript_file) {
-                        html += `<a href="/files/transcript/${encodeURIComponent(data.transcript_file)}" class="download-link" download>Download Transcript</a>`;
+                        html += `<div>[TXT] <a href="/files/transcript/${encodeURIComponent(data.transcript_file)}" class="download-link" download>Download Transcript</a></div>`;
                     }
                     if (data.audio_file) {
-                        html += `<a href="/files/audio/${encodeURIComponent(data.audio_file)}" class="download-link" download>Download Audio (MP3)</a>`;
+                        html += `<div>[MP3] <a href="/files/audio/${encodeURIComponent(data.audio_file)}" class="download-link" download>Download Audio (${audioQuality}kbps)</a></div>`;
                     }
                     if (data.video_file) {
-                        html += `<a href="/files/video/${encodeURIComponent(data.video_file)}" class="download-link" download>Download Video (MP4)</a>`;
+                        html += `<div>[MP4] <a href="/files/video/${encodeURIComponent(data.video_file)}" class="download-link" download>Download Video (${videoQuality}p)</a></div>`;
                     }
-
-                    result.innerHTML = html;
+                    resultContent.innerHTML = html;
                 } else {
-                    result.className = 'result error';
-                    result.innerHTML = '<strong>Error:</strong><br>' + data.message;
+                    statusText.innerHTML = `<span class="error-msg">Server Error: ${data.message}</span>`;
                 }
+
             } catch (error) {
-                loading.style.display = 'none';
-                result.style.display = 'block';
-                result.className = 'result error';
-                result.innerHTML = '<strong>Error:</strong><br>Failed to connect to server: ' + error.message;
+                statusText.innerHTML = `<span class="error-msg">Connection Error: ${error.message}</span>`;
             } finally {
                 submitBtn.disabled = false;
+                submitBtn.innerText = "Start Download";
             }
         });
     </script>
