@@ -85,15 +85,26 @@ class DownloaderApp(App):
 
         main_layout.add_widget(quality_layout)
 
-        # Download button
+        # Buttons layout
+        buttons_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.1), spacing=10)
+
         self.download_button = Button(
             text='Download',
-            size_hint=(1, 0.1),
             font_size='18sp',
             background_color=(0.2, 0.6, 1, 1)
         )
         self.download_button.bind(on_press=self.start_download)
-        main_layout.add_widget(self.download_button)
+        buttons_layout.add_widget(self.download_button)
+
+        self.copy_logs_button = Button(
+            text='Copy Logs',
+            font_size='18sp',
+            background_color=(0.2, 0.8, 0.2, 1)
+        )
+        self.copy_logs_button.bind(on_press=self.copy_logs)
+        buttons_layout.add_widget(self.copy_logs_button)
+
+        main_layout.add_widget(buttons_layout)
 
         # Status/Output display
         output_layout = BoxLayout(orientation='vertical', size_hint=(1, 0.35), spacing=5)
@@ -145,6 +156,20 @@ class DownloaderApp(App):
 
         Clock.schedule_once(update, 0)
 
+    def copy_logs(self, instance):
+        """Copy the logs to clipboard."""
+        try:
+            from kivy.core.clipboard import Clipboard
+            Clipboard.copy(self.output_label.text)
+            # Show brief confirmation
+            original_text = self.copy_logs_button.text
+            self.copy_logs_button.text = 'Copied!'
+            def reset_text(dt):
+                self.copy_logs_button.text = original_text
+            Clock.schedule_once(reset_text, 1.5)
+        except Exception as e:
+            self.update_output(f'Error copying to clipboard: {str(e)}')
+
     def start_download(self, instance):
         """Start the download process in a background thread."""
         url = self.url_input.text.strip()
@@ -177,6 +202,13 @@ class DownloaderApp(App):
     def download_process(self, url):
         """Background download process."""
         try:
+            # Set logger callback so we can see debug output from youtube_downloader
+            youtube_downloader.set_logger_callback(self.update_output)
+
+            # Debug: Show platform and storage info
+            self.update_output(f'Platform: {platform}')
+            self.update_output(f'Download dir: {self.downloads_dir}')
+
             download_types = []
             if self.transcript_checkbox.active:
                 download_types.append('transcript')
@@ -192,37 +224,46 @@ class DownloaderApp(App):
             # Download transcript
             if 'transcript' in download_types:
                 self.update_output('Downloading transcript...')
-                transcript_file = youtube_downloader.download_transcript(url, output_dir=self.transcripts_dir)
-                if transcript_file:
-                    self.update_output(f'✓ Transcript saved: {os.path.basename(transcript_file)}')
-                else:
-                    self.update_output('✗ Transcript download failed (video may not have captions)')
+                try:
+                    transcript_file = youtube_downloader.download_transcript(url, output_dir=self.transcripts_dir)
+                    if transcript_file:
+                        self.update_output(f'✓ Transcript saved: {os.path.basename(transcript_file)}')
+                    else:
+                        self.update_output('✗ Transcript download failed (video may not have captions)')
+                except Exception as e:
+                    self.update_output(f'✗ Transcript error: {str(e)}')
 
             # Download audio
             if 'audio' in download_types:
                 self.update_output(f'Downloading audio ({audio_quality} kbps)...')
-                audio_file = youtube_downloader.download_audio(
-                    url,
-                    output_dir=self.downloads_dir,
-                    audio_quality=audio_quality
-                )
-                if audio_file:
-                    self.update_output(f'✓ Audio saved: {os.path.basename(audio_file)}')
-                else:
-                    self.update_output('✗ Audio download failed')
+                try:
+                    audio_file = youtube_downloader.download_audio(
+                        url,
+                        output_dir=self.downloads_dir,
+                        audio_quality=audio_quality
+                    )
+                    if audio_file:
+                        self.update_output(f'✓ Audio saved: {os.path.basename(audio_file)}')
+                    else:
+                        self.update_output('✗ Audio download failed')
+                except Exception as e:
+                    self.update_output(f'✗ Audio error: {str(e)}')
 
             # Download video
             if 'video' in download_types:
                 self.update_output(f'Downloading video ({video_quality}p)...')
-                video_file = youtube_downloader.download_video(
-                    url,
-                    output_dir=self.downloads_dir,
-                    video_quality=video_quality
-                )
-                if video_file:
-                    self.update_output(f'✓ Video saved: {os.path.basename(video_file)}')
-                else:
-                    self.update_output('✗ Video download failed')
+                try:
+                    video_file = youtube_downloader.download_video(
+                        url,
+                        output_dir=self.downloads_dir,
+                        video_quality=video_quality
+                    )
+                    if video_file:
+                        self.update_output(f'✓ Video saved: {os.path.basename(video_file)}')
+                    else:
+                        self.update_output('✗ Video download failed')
+                except Exception as e:
+                    self.update_output(f'✗ Video error: {str(e)}')
 
             self.update_output('\nDownload complete!')
 

@@ -4,6 +4,40 @@ import yt_dlp
 import re
 import config
 
+# Detect if running on Android
+try:
+    from kivy.utils import platform
+    IS_ANDROID = platform == 'android'
+except ImportError:
+    IS_ANDROID = False
+
+# Global logger callback (can be set by calling code)
+_logger_callback = None
+
+def set_logger_callback(callback):
+    """Set a callback function for logging messages."""
+    global _logger_callback
+    _logger_callback = callback
+
+def _log(message):
+    """Log a message using the callback or print."""
+    if _logger_callback:
+        _logger_callback(message)
+    else:
+        print(message)
+
+# Get ffmpeg path for Android
+def get_ffmpeg_path():
+    """Get the path to ffmpeg binary, handling Android specially."""
+    if IS_ANDROID:
+        _log("Android detected - ffmpeg compiled as native libraries, not standalone binary")
+        _log("yt-dlp on Android requires ffmpeg executable, which we don't have")
+        _log("Solution: Download audio without post-processing (will be in original format)")
+        return None
+    else:
+        # On desktop, assume ffmpeg is in PATH
+        return None
+
 
 def clean_vtt_to_text(vtt_content):
     """
@@ -164,50 +198,118 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Downloading audio from: {video_url} (quality: {audio_quality} kbps)")
+        # Debug: Check if directory is writable
+        _log(f"Output directory: {output_dir}")
+        _log(f"Directory exists: {os.path.exists(output_dir)}")
+        _log(f"Directory is writable: {os.access(output_dir, os.W_OK)}")
 
-        # Configure yt-dlp options with updated settings to avoid 403 errors
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': config.AUDIO_FORMAT,
-                'preferredquality': audio_quality,
-            }],
-            'outtmpl': os.path.join(output_dir, f'%(title)s_audio_{audio_quality}kbps.%(ext)s'),
-            'quiet': config.YT_DLP_QUIET,
-            'no_warnings': config.YT_DLP_NO_WARNINGS,
-        }
+        _log(f"Downloading audio from: {video_url} (quality: {audio_quality} kbps)")
+
+        # On Android, we can't convert to MP3 without ffmpeg executable
+        # Instead, download best audio format directly (usually m4a/opus/webm)
+        if IS_ANDROID:
+            _log("Android: Downloading audio in native format (m4a/opus/webm)")
+
+            # Progress hook for debugging
+            def progress_hook(d):
+                if d['status'] == 'downloading':
+                    _log(f"Downloading: {d.get('_percent_str', 'N/A')} | {d.get('_speed_str', 'N/A')}")
+                elif d['status'] == 'finished':
+                    _log(f"Download finished, file: {d.get('filename', 'unknown')}")
+                elif d['status'] == 'error':
+                    _log(f"Download error: {d.get('error', 'unknown')}")
+
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(output_dir, f'%(title)s_audio.%(ext)s'),
+                'quiet': True,  # Must be True on Android to avoid stdout/stderr issues
+                'no_warnings': True,
+                'noprogress': True,  # Disable progress bar that causes stdout issues
+                'progress_hooks': [progress_hook],
+            }
+        else:
+            # On desktop, use ffmpeg to convert to MP3
+            _log("Desktop: Converting audio to MP3")
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': config.AUDIO_FORMAT,
+                    'preferredquality': audio_quality,
+                }],
+                'outtmpl': os.path.join(output_dir, f'%(title)s_audio_{audio_quality}kbps.%(ext)s'),
+                'quiet': config.YT_DLP_QUIET,
+                'no_warnings': config.YT_DLP_NO_WARNINGS,
+            }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
             title = info.get('title', 'video')
-            # Build the actual filename that was created
-            mp3_filename = os.path.join(output_dir, f'{title}_audio_{audio_quality}kbps.mp3')
 
-        # Verify file exists
-        if not os.path.exists(mp3_filename):
-            print(f"Warning: Expected file not found, searching for created file...")
-            # Fallback: find the most recent mp3 with the quality marker
-            mp3_files = [f for f in os.listdir(output_dir) if f.endswith(f'_audio_{audio_quality}kbps.mp3')]
-            if mp3_files:
-                mp3_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp3_files]
-                mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
-                mp3_filename = os.path.join(output_dir, mp3_files_with_time[0][0])
+            # Build the filename based on platform
+            if IS_ANDROID:
+                # On Android, file extension varies (m4a, opus, webm)
+                # Search for the downloaded file
+                audio_files = [f for f in os.listdir(output_dir)
+                              if f.startswith(title) and '_audio.' in f]
+                if audio_files:
+                    audio_filename = os.path.join(output_dir, audio_files[0])
+                else:
+                    # Fallback: find most recent audio file
+                    audio_files = [f for f in os.listdir(output_dir)
+                                  if '_audio.' in f or f.endswith(('.m4a', '.opus', '.webm'))]
+                    if audio_files:
+                        audio_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f)))
+                                                for f in audio_files]
+                        audio_files_with_time.sort(key=lambda x: x[1], reverse=True)
+                        audio_filename = os.path.join(output_dir, audio_files_with_time[0][0])
+                    else:
+                        _log("Error: Could not find downloaded audio file")
+                        return None
+            else:
+                # On desktop, expect MP3
+                audio_filename = os.path.join(output_dir, f'{title}_audio_{audio_quality}kbps.mp3')
+
+                # Verify file exists
+                if not os.path.exists(audio_filename):
+                    _log(f"Warning: Expected file not found, searching for created file...")
+                    # Fallback: find the most recent mp3 with the quality marker
+                    mp3_files = [f for f in os.listdir(output_dir)
+                                if f.endswith(f'_audio_{audio_quality}kbps.mp3')]
+                    if mp3_files:
+                        mp3_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f)))
+                                              for f in mp3_files]
+                        mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
+                        audio_filename = os.path.join(output_dir, mp3_files_with_time[0][0])
 
         # Update file timestamp to current time (resets age for cleanup purposes)
-        if os.path.exists(mp3_filename):
-            os.utime(mp3_filename, None)
+        if os.path.exists(audio_filename):
+            os.utime(audio_filename, None)
 
-        print(f"Audio saved to: {mp3_filename}")
-        return mp3_filename
+            # Trigger media scan on Android so file shows up immediately
+            if IS_ANDROID:
+                try:
+                    from android.storage import app_storage_path
+                    from jnius import autoclass
+                    MediaScannerConnection = autoclass('android.media.MediaScannerConnection')
+                    context = autoclass('org.kivy.android.PythonActivity').mActivity
+                    MediaScannerConnection.scanFile(context, [audio_filename], None, None)
+                    _log("Media scan triggered for audio file")
+                except Exception as e:
+                    _log(f"Note: Could not trigger media scan: {e}")
+
+            _log(f"✓ Audio saved to: {os.path.basename(audio_filename)}")
+            return audio_filename
+        else:
+            _log(f"✗ Error: Audio file not found after download")
+            return None
 
     except Exception as e:
-        print(f"Error downloading audio: {e}")
-        print("\nTroubleshooting tips:")
-        print("1. Update yt-dlp: pip install --upgrade yt-dlp")
-        print("2. Some videos may be restricted or unavailable")
-        print("3. Try using --audio-only flag if transcript works")
+        _log(f"Error downloading audio: {e}")
+        _log("\nTroubleshooting tips:")
+        _log("1. Update yt-dlp: pip install --upgrade yt-dlp")
+        _log("2. Some videos may be restricted or unavailable")
+        _log("3. Try using --audio-only flag if transcript works")
         return None
 
 
@@ -223,27 +325,42 @@ def download_video(video_url, output_dir=None, video_quality=None):
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Downloading video from: {video_url} (quality: {video_quality}p)")
+        _log(f"Downloading video from: {video_url} (quality: {video_quality}p)")
 
-        # Configure yt-dlp options for video download with audio
-        ydl_opts = {
-            # Download best video up to specified quality + best audio, merge them
-            'format': f'bestvideo[height<={video_quality}]+bestaudio/best',
-            'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
-            'quiet': config.YT_DLP_QUIET,
-            'no_warnings': config.YT_DLP_NO_WARNINGS,
-            'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
-            'postprocessors': [{
-                'key': 'FFmpegVideoRemuxer',
-                'preferedformat': config.VIDEO_FORMAT,
-            }, {
-                'key': 'FFmpegMetadata',
-            }],
-            # Force re-encode audio to AAC for better MP4 compatibility
-            'postprocessor_args': {
-                'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
-            },
-        }
+        # On Android, download without ffmpeg post-processing
+        if IS_ANDROID:
+            _log("Android: Downloading video in native format (mp4/webm)")
+            _log("Note: For best seeking support, prefer pre-merged MP4 formats")
+            ydl_opts = {
+                # Prefer pre-merged MP4 formats which have better seeking support
+                # mp4 containers are more likely to have moov atom at the beginning
+                'format': f'best[height<={video_quality}][ext=mp4]/best[height<={video_quality}]',
+                'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
+                'quiet': True,  # Must be True on Android to avoid stdout/stderr issues
+                'no_warnings': True,
+                'noprogress': True,  # Disable progress bar that causes stdout issues
+            }
+        else:
+            # On desktop, use ffmpeg for merging and conversion
+            _log("Desktop: Merging and converting video with ffmpeg")
+            ydl_opts = {
+                # Download best video up to specified quality + best audio, merge them
+                'format': f'bestvideo[height<={video_quality}]+bestaudio/best',
+                'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
+                'quiet': config.YT_DLP_QUIET,
+                'no_warnings': config.YT_DLP_NO_WARNINGS,
+                'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
+                'postprocessors': [{
+                    'key': 'FFmpegVideoRemuxer',
+                    'preferedformat': config.VIDEO_FORMAT,
+                }, {
+                    'key': 'FFmpegMetadata',
+                }],
+                # Force re-encode audio to AAC for better MP4 compatibility
+                'postprocessor_args': {
+                    'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
+                },
+            }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
@@ -265,15 +382,29 @@ def download_video(video_url, output_dir=None, video_quality=None):
         if os.path.exists(mp4_filename):
             os.utime(mp4_filename, None)
 
-        print(f"Video saved to: {mp4_filename}")
-        return mp4_filename
+            # Trigger media scan on Android so file shows up immediately
+            if IS_ANDROID:
+                try:
+                    from android.storage import app_storage_path
+                    from jnius import autoclass
+                    MediaScannerConnection = autoclass('android.media.MediaScannerConnection')
+                    context = autoclass('org.kivy.android.PythonActivity').mActivity
+                    MediaScannerConnection.scanFile(context, [mp4_filename], None, None)
+                    _log("Media scan triggered for video file")
+                except Exception as e:
+                    _log(f"Note: Could not trigger media scan: {e}")
+
+            _log(f"Video saved to: {mp4_filename}")
+            return mp4_filename
+        else:
+            return None
 
     except Exception as e:
-        print(f"Error downloading video: {e}")
-        print("\nTroubleshooting tips:")
-        print("1. Update yt-dlp: pip install --upgrade yt-dlp")
-        print("2. Some videos may be restricted or unavailable")
-        print("3. Make sure FFmpeg is installed for video merging")
+        _log(f"Error downloading video: {e}")
+        _log("\nTroubleshooting tips:")
+        _log("1. Update yt-dlp: pip install --upgrade yt-dlp")
+        _log("2. Some videos may be restricted or unavailable")
+        _log("3. Make sure FFmpeg is installed for video merging")
         return None
 
 

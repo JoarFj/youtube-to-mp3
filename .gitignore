@@ -10,3 +10,6 @@ env/
 !requirements.txt
 downloads/
 transcripts/
+.buildozer/
+bin/
+*.log

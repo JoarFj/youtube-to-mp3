@@ -32,7 +32,8 @@ version = 1.0.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,yt-dlp,certifi,ffpyplayer
+# ffmpeg provides the ffmpeg binary for audio/video conversion on Android
+requirements = python3,kivy,yt-dlp,certifi,ffmpeg
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -66,7 +67,7 @@ android.minapi = 21
 android.ndk = 25b
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
-android.private_storage = False
+android.private_storage = True
 
 # (str) Android logcat filters to use
 android.logcat_filters = *:S python:D
