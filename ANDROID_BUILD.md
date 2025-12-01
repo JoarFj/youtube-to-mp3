@@ -189,6 +189,10 @@ The app includes these Python packages (automatically installed by Buildozer):
 2. **Large video downloads** may take time depending on connection
 3. **Storage location** is fixed to `/sdcard/Download/YouTubeDownloader/`
 4. **Background downloads** may be interrupted if the app is closed
+5. **Video seeking issues**: Some longer videos may not support rewinding/fast-forwarding on the default Android video player. This is due to MP4 moov atom positioning. Workarounds:
+   - Use a different media player app (e.g., VLC for Android, MX Player) which handle various MP4 formats better
+   - Try different video quality settings, which may result in different format structures
+   - Audio files (MP3/M4A) do not have this issue
 
 ## Next Steps
 
