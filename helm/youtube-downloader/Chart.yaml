@@ -1,0 +1,9 @@
+# Chart.yaml - Metadata about your Helm chart
+# This is like package.json for npm - describes your package
+
+apiVersion: v2              # Helm chart API version (v2 is for Helm 3)
+name: youtube-downloader    # Chart name
+description: A YouTube downloader web application
+type: application           # 'application' = deployable, 'library' = reusable helpers
+version: 0.1.0              # Chart version (bump this when you change the chart)
+appVersion: "1.0.0"         # Your app's version (informational)

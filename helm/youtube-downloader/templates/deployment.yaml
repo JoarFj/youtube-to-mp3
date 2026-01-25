@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "youtube-downloader.fullname" . }}
+  labels:
+    {{- include "youtube-downloader.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "youtube-downloader.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "youtube-downloader.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: FILE_RETENTION_MINUTES
+              value: {{ .Values.env.fileRetentionMinutes | quote }}
+            - name: AUDIO_QUALITY
+              value: {{ .Values.env.audioQuality | quote }}
+            - name: VIDEO_QUALITY
+              value: {{ .Values.env.videoQuality | quote }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/downloads
+              subPath: downloads
+            - name: data
+              mountPath: /app/transcripts
+              subPath: transcripts
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "youtube-downloader.fullname" . }}
+      {{- end }}

@@ -1,0 +1,40 @@
+# values.yaml - Default configuration for your chart
+# Users override these values without editing templates
+# Override with: helm install myapp ./chart -f custom-values.yaml
+# Or inline:     helm install myapp ./chart --set image.tag=v2
+
+# Container image settings
+image:
+  repository: joarfj/youtube-downloader  # Change this!
+  tag: latest
+  pullPolicy: IfNotPresent  # Always, Never, or IfNotPresent
+
+# Number of replicas (pod instances)
+replicaCount: 2
+
+# Service configuration
+service:
+  type: NodePort
+  port: 8000
+  nodePort: 30080  # Port you'll access via Tailscale (30000-32767)
+
+# Application environment variables
+env:
+  fileRetentionMinutes: "30"
+  audioQuality: "192"
+  videoQuality: "720"
+
+# Persistent storage for downloads
+persistence:
+  enabled: false
+  size: 10Gi
+  storageClass: local-path  # k3s default
+
+# Resource limits (optional but recommended)
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"

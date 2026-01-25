@@ -1,0 +1,14 @@
+services:
+  youtube-downloader:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist downloads to host machine
+      - ./downloads:/app/downloads
+      - ./transcripts:/app/transcripts
+    environment:
+      - FILE_RETENTION_MINUTES=30
+      - AUDIO_QUALITY=192
+      - VIDEO_QUALITY=720
+    restart: unless-stopped
