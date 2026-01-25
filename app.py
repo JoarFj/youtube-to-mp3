@@ -1,9 +1,12 @@
 import os
 import time
 import asyncio
+import json
+import queue
+import threading
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -187,6 +190,108 @@ async def download_youtube(request: YouTubeRequest):
     except Exception as e:
         logger.error(f"Error in download_youtube: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/download-stream")
+async def download_youtube_stream(request: YouTubeRequest):
+    """
+    Download YouTube content with real-time progress updates via Server-Sent Events.
+    """
+    video_id = youtube_downloader.extract_video_id(request.url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    # Parse download types
+    download_types = []
+    if request.download_type == "both":
+        download_types = ["transcript", "audio"]
+    else:
+        download_types = [t.strip() for t in request.download_type.split(',')]
+
+    progress_queue = queue.Queue()
+
+    def progress_callback(media_type, percent, speed, eta):
+        progress_queue.put({
+            'type': 'progress',
+            'media_type': media_type,
+            'percent': percent,
+            'speed': speed,
+            'eta': eta
+        })
+
+    def download_task():
+        results = {
+            'transcript_file': None,
+            'audio_file': None,
+            'video_file': None,
+            'messages': []
+        }
+
+        # Download transcript
+        if "transcript" in download_types:
+            progress_queue.put({'type': 'status', 'message': 'Fetching transcript...'})
+            transcript_file = youtube_downloader.download_transcript(
+                request.url, progress_callback=progress_callback
+            )
+            if transcript_file:
+                results['transcript_file'] = os.path.basename(transcript_file)
+                results['messages'].append("Transcript downloaded")
+            else:
+                results['messages'].append("Transcript failed (no captions)")
+
+        # Download audio
+        if "audio" in download_types:
+            audio_quality = request.audio_quality if request.audio_quality else config.AUDIO_QUALITY
+            progress_queue.put({'type': 'status', 'message': f'Downloading audio ({audio_quality} kbps)...'})
+            audio_file = youtube_downloader.download_audio(
+                request.url, audio_quality=audio_quality, progress_callback=progress_callback
+            )
+            if audio_file:
+                results['audio_file'] = os.path.basename(audio_file)
+                results['messages'].append(f"Audio downloaded ({audio_quality} kbps)")
+            else:
+                results['messages'].append("Audio download failed")
+
+        # Download video
+        if "video" in download_types:
+            video_quality = request.video_quality if request.video_quality else config.VIDEO_QUALITY
+            progress_queue.put({'type': 'status', 'message': f'Downloading video ({video_quality}p)...'})
+            video_file = youtube_downloader.download_video(
+                request.url, video_quality=video_quality, progress_callback=progress_callback
+            )
+            if video_file:
+                results['video_file'] = os.path.basename(video_file)
+                results['messages'].append(f"Video downloaded ({video_quality}p)")
+            else:
+                results['messages'].append("Video download failed")
+
+        progress_queue.put({'type': 'done', 'results': results})
+
+    def generate():
+        # Start download in background thread
+        thread = threading.Thread(target=download_task)
+        thread.start()
+
+        while True:
+            try:
+                data = progress_queue.get(timeout=0.5)
+                yield f"data: {json.dumps(data)}\n\n"
+                if data.get('type') == 'done':
+                    break
+            except queue.Empty:
+                # Send keepalive
+                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+
+        thread.join()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @app.get("/files/transcript/{filename}")

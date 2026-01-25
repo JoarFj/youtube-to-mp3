@@ -71,7 +71,7 @@ def extract_video_id(url):
     return None
 
 
-def download_transcript(video_url, output_dir=None):
+def download_transcript(video_url, output_dir=None, progress_callback=None):
     """Download transcript from YouTube video using yt-dlp."""
     try:
         # Use config default if not specified
@@ -88,6 +88,8 @@ def download_transcript(video_url, output_dir=None):
             return None
 
         print(f"Downloading transcript for video: {video_id}")
+        if progress_callback:
+            progress_callback('transcript', '0%', 'Fetching...', '')
 
         # Use yt-dlp to download subtitles with video title as filename
         output_file = os.path.join(output_dir, '%(title)s')
@@ -141,6 +143,9 @@ def download_transcript(video_url, output_dir=None):
             # Update file timestamp to current time (resets age for cleanup purposes)
             os.utime(txt_file, None)
 
+            if progress_callback:
+                progress_callback('transcript', '100%', 'Done', '')
+
             print(f"Transcript saved to: {txt_file}")
             return txt_file
         else:
@@ -152,7 +157,7 @@ def download_transcript(video_url, output_dir=None):
         return None
 
 
-def download_audio(video_url, output_dir=None, audio_quality=None):
+def download_audio(video_url, output_dir=None, audio_quality=None, progress_callback=None):
     """Download audio from YouTube video as MP3."""
     try:
         # Use config default if not specified
@@ -166,6 +171,22 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
 
         print(f"Downloading audio from: {video_url} (quality: {audio_quality} kbps)")
 
+        def progress_hook(d):
+            if progress_callback and d['status'] == 'downloading':
+                percent = d.get('_percent_str', '0%').strip()
+                speed = d.get('_speed_str', 'N/A').strip()
+                eta = d.get('_eta_str', 'N/A').strip()
+                progress_callback('audio', percent, speed, eta)
+            elif progress_callback and d['status'] == 'finished':
+                progress_callback('audio', '99%', 'Converting...', 'FFmpeg processing')
+
+        def postprocessor_hook(d):
+            if progress_callback:
+                if d['status'] == 'started':
+                    progress_callback('audio', '99%', 'Converting...', d.get('postprocessor', 'Processing'))
+                elif d['status'] == 'finished':
+                    progress_callback('audio', '100%', 'Done', '')
+
         # Configure yt-dlp options with updated settings to avoid 403 errors
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -177,6 +198,8 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
             'outtmpl': os.path.join(output_dir, f'%(title)s_audio_{audio_quality}kbps.%(ext)s'),
             'quiet': config.YT_DLP_QUIET,
             'no_warnings': config.YT_DLP_NO_WARNINGS,
+            'progress_hooks': [progress_hook],
+            'postprocessor_hooks': [postprocessor_hook],
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -211,7 +234,7 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
         return None
 
 
-def download_video(video_url, output_dir=None, video_quality=None):
+def download_video(video_url, output_dir=None, video_quality=None, progress_callback=None):
     """Download video from YouTube as MP4 with audio."""
     try:
         # Use config default if not specified
@@ -224,6 +247,33 @@ def download_video(video_url, output_dir=None, video_quality=None):
         os.makedirs(output_dir, exist_ok=True)
 
         print(f"Downloading video from: {video_url} (quality: {video_quality}p)")
+
+        # Track download stages for video (downloads video+audio separately, then merges)
+        download_state = {'stage': 0, 'stages': ['video stream', 'audio stream']}
+
+        def progress_hook(d):
+            if progress_callback and d['status'] == 'downloading':
+                percent = d.get('_percent_str', '0%').strip()
+                speed = d.get('_speed_str', 'N/A').strip()
+                eta = d.get('_eta_str', 'N/A').strip()
+                # Show which stage we're on
+                stage_name = download_state['stages'][download_state['stage']] if download_state['stage'] < len(download_state['stages']) else 'video'
+                progress_callback('video', f"{percent} ({stage_name})", speed, eta)
+            elif progress_callback and d['status'] == 'finished':
+                download_state['stage'] += 1
+                if download_state['stage'] < len(download_state['stages']):
+                    # More streams to download
+                    progress_callback('video', '0%', 'Starting...', f"Downloading {download_state['stages'][download_state['stage']]}...")
+                else:
+                    # All streams done, now merging
+                    progress_callback('video', '99%', 'Merging...', 'FFmpeg processing')
+
+        def postprocessor_hook(d):
+            if progress_callback:
+                if d['status'] == 'started':
+                    progress_callback('video', '99%', 'Processing...', d.get('postprocessor', 'Converting'))
+                elif d['status'] == 'finished':
+                    progress_callback('video', '100%', 'Done', '')
 
         # Configure yt-dlp options for video download with audio
         ydl_opts = {
@@ -243,6 +293,8 @@ def download_video(video_url, output_dir=None, video_quality=None):
             'postprocessor_args': {
                 'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
             },
+            'progress_hooks': [progress_hook],
+            'postprocessor_hooks': [postprocessor_hook],
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
