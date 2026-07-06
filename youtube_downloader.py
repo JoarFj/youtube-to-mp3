@@ -105,6 +105,33 @@ def extract_video_id(url):
     return None
 
 
+def canonical_youtube_url(url):
+    """Rebuild a canonical watch URL from the validated video ID, or None.
+
+    Normalises shorts/embed/mobile links into a single well-formed URL before
+    it reaches yt-dlp, so odd input formats can't produce surprising results.
+    """
+    video_id = extract_video_id(url)
+    if not video_id:
+        return None
+    return f'https://www.youtube.com/watch?v={video_id}'
+
+
+def _final_filepath(info):
+    """Return the real on-disk path yt-dlp produced, after any postprocessing.
+
+    yt-dlp records the final path in requested_downloads[..]['filepath'].
+    Reading it back is reliable even when titles get sanitised or the output
+    extension varies (m4a/opus/webm on Android) — far better than rebuilding
+    the name from the title or scanning the directory by modification time.
+    """
+    for entry in info.get('requested_downloads') or []:
+        path = entry.get('filepath') or entry.get('_filename')
+        if path:
+            return path
+    return info.get('filepath')
+
+
 def download_transcript(video_url, output_dir=None):
     """Download transcript from YouTube video using yt-dlp."""
     try:
@@ -115,11 +142,13 @@ def download_transcript(video_url, output_dir=None):
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
 
-        # Extract video ID
-        video_id = extract_video_id(video_url)
-        if not video_id:
+        # Validate and canonicalise the URL before handing it to yt-dlp
+        canonical_url = canonical_youtube_url(video_url)
+        if not canonical_url:
             print(f"Error: Could not extract video ID from URL: {video_url}")
             return None
+        video_url = canonical_url
+        video_id = extract_video_id(video_url)
 
         print(f"Downloading transcript for video: {video_id}")
 
@@ -138,48 +167,40 @@ def download_transcript(video_url, output_dir=None):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            # Get the actual title for the filename
-            title = info.get('title', video_id)
 
-        # yt-dlp saves as .vtt with title, find the file
-        # Look for recently created .vtt file
-        vtt_files = [f for f in os.listdir(output_dir) if f.endswith('.en.vtt')]
-        if not vtt_files:
+        # yt-dlp records the exact subtitle path it wrote. Reading it back is
+        # reliable even under concurrent requests, unlike scanning the output
+        # directory for the most-recently-modified .vtt file.
+        requested = info.get('requested_subtitles') or {}
+        sub = requested.get(config.SUBTITLE_LANGUAGE)
+        vtt_file = sub.get('filepath') if sub else None
+
+        if not vtt_file or not os.path.exists(vtt_file):
             print("No subtitles available for this video")
             return None
 
-        # Get most recent vtt file
-        vtt_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in vtt_files]
-        vtt_files_with_time.sort(key=lambda x: x[1], reverse=True)
-        vtt_filename = vtt_files_with_time[0][0]
-        vtt_file = os.path.join(output_dir, vtt_filename)
+        # Read VTT file
+        with open(vtt_file, 'r', encoding='utf-8') as f:
+            vtt_content = f.read()
 
-        # Create txt filename from vtt filename
-        txt_file = vtt_file.replace('.en.vtt', '_transcript.txt')
+        # Convert VTT to clean text using helper function
+        clean_text = clean_vtt_to_text(vtt_content)
 
-        if os.path.exists(vtt_file):
-            # Read VTT file
-            with open(vtt_file, 'r', encoding='utf-8') as f:
-                vtt_content = f.read()
+        # Build txt name by stripping the trailing ".<lang>.vtt" extensions
+        txt_file = os.path.splitext(os.path.splitext(vtt_file)[0])[0] + '_transcript.txt'
 
-            # Convert VTT to clean text using helper function
-            clean_text = clean_vtt_to_text(vtt_content)
+        # Write clean text to file
+        with open(txt_file, 'w', encoding='utf-8') as f:
+            f.write(clean_text)
 
-            # Write clean text to file
-            with open(txt_file, 'w', encoding='utf-8') as f:
-                f.write(clean_text)
+        # Remove VTT file
+        os.remove(vtt_file)
 
-            # Remove VTT file
-            os.remove(vtt_file)
+        # Update file timestamp to current time (resets age for cleanup purposes)
+        os.utime(txt_file, None)
 
-            # Update file timestamp to current time (resets age for cleanup purposes)
-            os.utime(txt_file, None)
-
-            print(f"Transcript saved to: {txt_file}")
-            return txt_file
-        else:
-            print("No subtitles available for this video")
-            return None
+        print(f"Transcript saved to: {txt_file}")
+        return txt_file
 
     except Exception as e:
         print(f"Error downloading transcript: {e}")
@@ -194,6 +215,13 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
             output_dir = config.DOWNLOADS_DIR
         if audio_quality is None:
             audio_quality = config.AUDIO_QUALITY
+
+        # Validate and canonicalise the URL before handing it to yt-dlp
+        canonical_url = canonical_youtube_url(video_url)
+        if not canonical_url:
+            _log(f"Error: Could not extract video ID from URL: {video_url}")
+            return None
+        video_url = canonical_url
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -244,43 +272,14 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            title = info.get('title', 'video')
 
-            # Build the filename based on platform
-            if IS_ANDROID:
-                # On Android, file extension varies (m4a, opus, webm)
-                # Search for the downloaded file
-                audio_files = [f for f in os.listdir(output_dir)
-                              if f.startswith(title) and '_audio.' in f]
-                if audio_files:
-                    audio_filename = os.path.join(output_dir, audio_files[0])
-                else:
-                    # Fallback: find most recent audio file
-                    audio_files = [f for f in os.listdir(output_dir)
-                                  if '_audio.' in f or f.endswith(('.m4a', '.opus', '.webm'))]
-                    if audio_files:
-                        audio_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f)))
-                                                for f in audio_files]
-                        audio_files_with_time.sort(key=lambda x: x[1], reverse=True)
-                        audio_filename = os.path.join(output_dir, audio_files_with_time[0][0])
-                    else:
-                        _log("Error: Could not find downloaded audio file")
-                        return None
-            else:
-                # On desktop, expect MP3
-                audio_filename = os.path.join(output_dir, f'{title}_audio_{audio_quality}kbps.mp3')
-
-                # Verify file exists
-                if not os.path.exists(audio_filename):
-                    _log(f"Warning: Expected file not found, searching for created file...")
-                    # Fallback: find the most recent mp3 with the quality marker
-                    mp3_files = [f for f in os.listdir(output_dir)
-                                if f.endswith(f'_audio_{audio_quality}kbps.mp3')]
-                    if mp3_files:
-                        mp3_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f)))
-                                              for f in mp3_files]
-                        mp3_files_with_time.sort(key=lambda x: x[1], reverse=True)
-                        audio_filename = os.path.join(output_dir, mp3_files_with_time[0][0])
+        # Ask yt-dlp for the exact file it wrote. This works the same whether
+        # the desktop path post-processed to MP3 or Android kept the native
+        # m4a/opus/webm, so there's no title-guessing or directory scanning.
+        audio_filename = _final_filepath(info)
+        if not audio_filename:
+            _log("Error: Could not determine downloaded audio file path")
+            return None
 
         # Update file timestamp to current time (resets age for cleanup purposes)
         if os.path.exists(audio_filename):
@@ -321,6 +320,13 @@ def download_video(video_url, output_dir=None, video_quality=None):
             output_dir = config.DOWNLOADS_DIR
         if video_quality is None:
             video_quality = config.VIDEO_QUALITY
+
+        # Validate and canonicalise the URL before handing it to yt-dlp
+        canonical_url = canonical_youtube_url(video_url)
+        if not canonical_url:
+            _log(f"Error: Could not extract video ID from URL: {video_url}")
+            return None
+        video_url = canonical_url
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -364,19 +370,13 @@ def download_video(video_url, output_dir=None, video_quality=None):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            title = info.get('title', 'video')
-            # Build the actual filename that was created
-            mp4_filename = os.path.join(output_dir, f'{title}_video_{video_quality}p.{config.VIDEO_FORMAT}')
 
-        # Verify file exists
-        if not os.path.exists(mp4_filename):
-            print(f"Warning: Expected file not found, searching for created file...")
-            # Fallback: find the most recent mp4 with the quality marker
-            mp4_files = [f for f in os.listdir(output_dir) if f.endswith(f'_video_{video_quality}p.{config.VIDEO_FORMAT}')]
-            if mp4_files:
-                mp4_files_with_time = [(f, os.path.getmtime(os.path.join(output_dir, f))) for f in mp4_files]
-                mp4_files_with_time.sort(key=lambda x: x[1], reverse=True)
-                mp4_filename = os.path.join(output_dir, mp4_files_with_time[0][0])
+        # Ask yt-dlp for the exact file it wrote (final path after any merge or
+        # remux), rather than reconstructing the name from the title.
+        mp4_filename = _final_filepath(info)
+        if not mp4_filename:
+            _log("Error: Could not determine downloaded video file path")
+            return None
 
         # Update file timestamp to current time (resets age for cleanup purposes)
         if os.path.exists(mp4_filename):
