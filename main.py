@@ -10,9 +10,10 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
-from kivy.uix.spinner import Spinner
-from kivy.uix.scrollview import ScrollView
+from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.core.window import Window
 from kivy.utils import platform
 import threading
 
@@ -20,12 +21,43 @@ import youtube_downloader
 import config
 
 
+class QualityOption(SpinnerOption):
+    """Spinner dropdown option with a consistent, comfortably tappable height."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.height = dp(48)
+        self.font_size = '15sp'
+
+
+def make_quality_spinner(text, values):
+    """Build a Spinner whose dropdown stays on screen instead of overflowing.
+
+    Kivy's default Spinner dropdown has no height cap, so on small displays a
+    list can render past the top or bottom edge. Bounding max_height makes an
+    over-long list scroll within the dropdown instead.
+    """
+    spinner = Spinner(
+        text=text,
+        values=values,
+        size_hint=(1, 1),
+        option_cls=QualityOption,
+    )
+    if spinner._dropdown is not None:
+        spinner._dropdown.max_height = dp(4 * 48 + 12)
+    return spinner
+
+
 class DownloaderApp(App):
     def build(self):
         self.title = 'YouTube Downloader'
 
+        # Dark, uniform background for a cleaner look
+        Window.clearcolor = (0.07, 0.08, 0.10, 1)
+
         # Main layout
-        main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        main_layout = BoxLayout(orientation='vertical', padding=dp(12), spacing=dp(10))
 
         # Title
         title_label = Label(
@@ -68,18 +100,14 @@ class DownloaderApp(App):
         quality_layout = GridLayout(cols=2, size_hint=(1, 0.15), spacing=10)
 
         quality_layout.add_widget(Label(text='Audio Quality:', font_size='14sp'))
-        self.audio_quality_spinner = Spinner(
-            text='192 kbps',
-            values=['128 kbps', '192 kbps', '256 kbps', '320 kbps'],
-            size_hint=(1, 1)
+        self.audio_quality_spinner = make_quality_spinner(
+            '192 kbps', ['128 kbps', '192 kbps', '256 kbps', '320 kbps']
         )
         quality_layout.add_widget(self.audio_quality_spinner)
 
         quality_layout.add_widget(Label(text='Video Quality:', font_size='14sp'))
-        self.video_quality_spinner = Spinner(
-            text='720p',
-            values=['360p', '480p', '720p', '1080p'],
-            size_hint=(1, 1)
+        self.video_quality_spinner = make_quality_spinner(
+            '720p', ['360p', '480p', '720p', '1080p']
         )
         quality_layout.add_widget(self.video_quality_spinner)
 
@@ -107,21 +135,24 @@ class DownloaderApp(App):
         main_layout.add_widget(buttons_layout)
 
         # Status/Output display
-        output_layout = BoxLayout(orientation='vertical', size_hint=(1, 0.35), spacing=5)
-        output_layout.add_widget(Label(text='Status:', size_hint=(1, 0.2), font_size='16sp'))
+        output_layout = BoxLayout(orientation='vertical', size_hint=(1, 0.35), spacing=dp(5))
+        output_layout.add_widget(Label(
+            text='Status:', size_hint=(1, 0.2), font_size='16sp', halign='left'
+        ))
 
-        # Scrollable output
-        scroll = ScrollView(size_hint=(1, 0.8))
-        self.output_label = Label(
+        # Read-only text box: wraps long lines and scrolls internally, so file
+        # paths and logs stay within the screen. Also selectable for manual copy.
+        self.output_label = TextInput(
             text='Ready to download...',
-            size_hint_y=None,
+            readonly=True,
+            size_hint=(1, 0.8),
             font_size='12sp',
-            halign='left',
-            valign='top'
+            background_color=(0.12, 0.13, 0.16, 1),
+            foreground_color=(0.90, 0.92, 0.95, 1),
+            cursor_color=(0.2, 0.6, 1, 1),
+            padding=(dp(8), dp(8)),
         )
-        self.output_label.bind(texture_size=self.output_label.setter('size'))
-        scroll.add_widget(self.output_label)
-        output_layout.add_widget(scroll)
+        output_layout.add_widget(self.output_label)
 
         main_layout.add_widget(output_layout)
 
@@ -146,13 +177,16 @@ class DownloaderApp(App):
         return main_layout
 
     def update_output(self, text, append=True):
-        """Update the output label text."""
+        """Update the output text box and keep the newest line in view."""
         def update(dt):
             if append:
                 current = self.output_label.text
                 self.output_label.text = f"{current}\n{text}"
             else:
                 self.output_label.text = text
+
+            # Scroll to the bottom so the latest log line is visible
+            self.output_label.cursor = (0, len(self.output_label.text.split('\n')) - 1)
 
         Clock.schedule_once(update, 0)
 
