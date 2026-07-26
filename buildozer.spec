@@ -90,7 +90,9 @@ android.allow_backup = True
 [buildozer]
 
 # (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
-log_level = 2
+# Set back to 2 when diagnosing a build failure: level 1 reports only which
+# command failed, not which recipe or why (the cause lands in [DEBUG] lines).
+log_level = 1
 
 # (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1
