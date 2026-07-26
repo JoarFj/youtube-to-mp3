@@ -128,7 +128,7 @@ buildozer android logcat
 
 ### yt-dlp fails on Android
 
-Make sure ffmpeg is included. The buildozer.spec includes `ffpyplayer` which provides ffmpeg functionality on Android.
+Make sure ffmpeg is included. The buildozer.spec includes the `ffmpeg` p4a recipe, which bundles a real ffmpeg CLI binary into the APK (as `lib/<abi>/libffmpegbin.so`) that `youtube_downloader.py` locates at runtime and passes to yt-dlp via `ffmpeg_location`.
 
 ## File Structure
 
@@ -181,7 +181,7 @@ The app includes these Python packages (automatically installed by Buildozer):
 - `kivy` - UI framework
 - `yt-dlp` - YouTube download functionality
 - `certifi` - SSL certificates for HTTPS
-- `ffpyplayer` - FFmpeg for audio/video processing on Android
+- `ffmpeg` - Real ffmpeg CLI binary, bundled for audio/video merging and conversion on Android
 
 ## Known Limitations
 

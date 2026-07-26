@@ -28,11 +28,26 @@ def _log(message):
 
 # Get ffmpeg path for Android
 def get_ffmpeg_path():
-    """Get the path to ffmpeg binary, handling Android specially."""
+    """Get the path to the ffmpeg binary, handling Android specially.
+
+    The `ffmpeg` p4a recipe (see buildozer.spec requirements) builds a real
+    ffmpeg CLI binary and packages it as lib/<abi>/libffmpegbin.so, which
+    Android keeps as a real executable file on disk (unlike the app's
+    writable data dir, .so files under nativeLibraryDir are extracted and
+    exec-able). Locate it there so yt-dlp can shell out to it via
+    ffmpeg_location, same as it does on desktop via PATH.
+    """
     if IS_ANDROID:
-        _log("Android detected - ffmpeg compiled as native libraries, not standalone binary")
-        _log("yt-dlp on Android requires ffmpeg executable, which we don't have")
-        _log("Solution: Download audio without post-processing (will be in original format)")
+        try:
+            from jnius import autoclass
+            context = autoclass('org.kivy.android.PythonActivity').mActivity
+            native_lib_dir = context.getApplicationInfo().nativeLibraryDir
+            ffmpeg_path = os.path.join(native_lib_dir, 'libffmpegbin.so')
+            if os.path.exists(ffmpeg_path) and os.access(ffmpeg_path, os.X_OK):
+                return ffmpeg_path
+            _log(f"Bundled ffmpeg not found or not executable at {ffmpeg_path}")
+        except Exception as e:
+            _log(f"Could not locate bundled ffmpeg: {e}")
         return None
     else:
         # On desktop, assume ffmpeg is in PATH
@@ -233,20 +248,22 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
 
         _log(f"Downloading audio from: {video_url} (quality: {audio_quality} kbps)")
 
-        # On Android, we can't convert to MP3 without ffmpeg executable
-        # Instead, download best audio format directly (usually m4a/opus/webm)
-        if IS_ANDROID:
-            _log("Android: Downloading audio in native format (m4a/opus/webm)")
+        # Progress hook for debugging
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                _log(f"Downloading: {d.get('_percent_str', 'N/A')} | {d.get('_speed_str', 'N/A')}")
+            elif d['status'] == 'finished':
+                _log(f"Download finished, file: {d.get('filename', 'unknown')}")
+            elif d['status'] == 'error':
+                _log(f"Download error: {d.get('error', 'unknown')}")
 
-            # Progress hook for debugging
-            def progress_hook(d):
-                if d['status'] == 'downloading':
-                    _log(f"Downloading: {d.get('_percent_str', 'N/A')} | {d.get('_speed_str', 'N/A')}")
-                elif d['status'] == 'finished':
-                    _log(f"Download finished, file: {d.get('filename', 'unknown')}")
-                elif d['status'] == 'error':
-                    _log(f"Download error: {d.get('error', 'unknown')}")
+        ffmpeg_path = get_ffmpeg_path() if IS_ANDROID else None
 
+        if IS_ANDROID and not ffmpeg_path:
+            # Bundled ffmpeg couldn't be located: fall back to downloading
+            # the best audio format directly (usually m4a/opus/webm), with
+            # no MP3 conversion, so downloads still work.
+            _log("Android: bundled ffmpeg not found, downloading audio in native format (m4a/opus/webm)")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(output_dir, f'%(title)s_audio.%(ext)s'),
@@ -256,8 +273,8 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
                 'progress_hooks': [progress_hook],
             }
         else:
-            # On desktop, use ffmpeg to convert to MP3
-            _log("Desktop: Converting audio to MP3")
+            # Use ffmpeg to convert to MP3 (bundled binary on Android, PATH on desktop)
+            _log("Converting audio to MP3" + (" using bundled ffmpeg" if IS_ANDROID else ""))
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
@@ -266,9 +283,13 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
                     'preferredquality': audio_quality,
                 }],
                 'outtmpl': os.path.join(output_dir, f'%(title)s_audio_{audio_quality}kbps.%(ext)s'),
-                'quiet': config.YT_DLP_QUIET,
-                'no_warnings': config.YT_DLP_NO_WARNINGS,
+                'quiet': True if IS_ANDROID else config.YT_DLP_QUIET,
+                'no_warnings': True if IS_ANDROID else config.YT_DLP_NO_WARNINGS,
             }
+            if IS_ANDROID:
+                ydl_opts['ffmpeg_location'] = ffmpeg_path
+                ydl_opts['noprogress'] = True
+                ydl_opts['progress_hooks'] = [progress_hook]
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
@@ -333,10 +354,15 @@ def download_video(video_url, output_dir=None, video_quality=None):
 
         _log(f"Downloading video from: {video_url} (quality: {video_quality}p)")
 
-        # On Android, download without ffmpeg post-processing
-        if IS_ANDROID:
-            _log("Android: Downloading video in native format (mp4/webm)")
-            _log("Note: For best seeking support, prefer pre-merged MP4 formats")
+        ffmpeg_path = get_ffmpeg_path() if IS_ANDROID else None
+
+        if IS_ANDROID and not ffmpeg_path:
+            # Bundled ffmpeg couldn't be located: without it we can't merge
+            # separate video+audio streams, so fall back to formats YouTube
+            # serves pre-merged. YouTube only still does that at a handful of
+            # low resolutions (reliably 360p), so higher qualities may fail.
+            _log("Android: bundled ffmpeg not found, downloading pre-merged video only")
+            _log("Note: only formats YouTube serves pre-merged (typically up to 360p) will succeed")
             ydl_opts = {
                 # Prefer pre-merged MP4 formats which have better seeking support
                 # mp4 containers are more likely to have moov atom at the beginning
@@ -347,14 +373,16 @@ def download_video(video_url, output_dir=None, video_quality=None):
                 'noprogress': True,  # Disable progress bar that causes stdout issues
             }
         else:
-            # On desktop, use ffmpeg for merging and conversion
-            _log("Desktop: Merging and converting video with ffmpeg")
+            # Use ffmpeg for merging and conversion (bundled binary on
+            # Android, PATH on desktop) so any requested quality can be
+            # assembled from YouTube's separate video-only + audio-only streams.
+            _log("Merging and converting video with ffmpeg" + (" (bundled)" if IS_ANDROID else ""))
             ydl_opts = {
                 # Download best video up to specified quality + best audio, merge them
                 'format': f'bestvideo[height<={video_quality}]+bestaudio/best',
                 'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
-                'quiet': config.YT_DLP_QUIET,
-                'no_warnings': config.YT_DLP_NO_WARNINGS,
+                'quiet': True if IS_ANDROID else config.YT_DLP_QUIET,
+                'no_warnings': True if IS_ANDROID else config.YT_DLP_NO_WARNINGS,
                 'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
                 'postprocessors': [{
                     'key': 'FFmpegVideoRemuxer',
@@ -367,6 +395,9 @@ def download_video(video_url, output_dir=None, video_quality=None):
                     'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
                 },
             }
+            if IS_ANDROID:
+                ydl_opts['ffmpeg_location'] = ffmpeg_path
+                ydl_opts['noprogress'] = True
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
