@@ -1,0 +1,32 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [kivy-android-app]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build APK with Buildozer
+        id: buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }} (${{ github.sha }})
+          body: |
+            Automated debug APK build from commit ${{ github.sha }} on branch `${{ github.ref_name }}`.
+          files: ${{ steps.buildozer.outputs.filename }}
