@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 import yt_dlp
 import re
 import config
@@ -259,23 +260,25 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
 
         ffmpeg_path = get_ffmpeg_path() if IS_ANDROID else None
 
+        # Download the audio stream as-is (m4a/opus/webm). Always available,
+        # since it needs no ffmpeg at all.
+        native_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(output_dir, f'%(title)s_audio.%(ext)s'),
+            'quiet': True,  # Must be True on Android to avoid stdout/stderr issues
+            'no_warnings': True,
+            'noprogress': True,  # Disable progress bar that causes stdout issues
+            'progress_hooks': [progress_hook],
+        }
+
         if IS_ANDROID and not ffmpeg_path:
-            # Bundled ffmpeg couldn't be located: fall back to downloading
-            # the best audio format directly (usually m4a/opus/webm), with
-            # no MP3 conversion, so downloads still work.
             _log("Android: bundled ffmpeg not found, downloading audio in native format (m4a/opus/webm)")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(output_dir, f'%(title)s_audio.%(ext)s'),
-                'quiet': True,  # Must be True on Android to avoid stdout/stderr issues
-                'no_warnings': True,
-                'noprogress': True,  # Disable progress bar that causes stdout issues
-                'progress_hooks': [progress_hook],
-            }
+            attempts = [('native format download', native_opts)]
         else:
-            # Use ffmpeg to convert to MP3 (bundled binary on Android, PATH on desktop)
-            _log("Converting audio to MP3" + (" using bundled ffmpeg" if IS_ANDROID else ""))
-            ydl_opts = {
+            # Convert to MP3 with ffmpeg (bundled binary on Android, PATH on
+            # desktop), falling back to the native format so a failure in the
+            # conversion still leaves a playable file.
+            mp3_opts = {
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
@@ -287,12 +290,15 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
                 'no_warnings': True if IS_ANDROID else config.YT_DLP_NO_WARNINGS,
             }
             if IS_ANDROID:
-                ydl_opts['ffmpeg_location'] = ffmpeg_path
-                ydl_opts['noprogress'] = True
-                ydl_opts['progress_hooks'] = [progress_hook]
+                mp3_opts['ffmpeg_location'] = ffmpeg_path
+                mp3_opts['noprogress'] = True
+                mp3_opts['progress_hooks'] = [progress_hook]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
+            attempts = [('MP3 conversion', mp3_opts)]
+            if IS_ANDROID:
+                attempts.append(('native format download', native_opts))
+
+        info = _run_download_attempts(video_url, attempts)
 
         # Ask yt-dlp for the exact file it wrote. This works the same whether
         # the desktop path post-processed to MP3 or Android kept the native
@@ -325,12 +331,80 @@ def download_audio(video_url, output_dir=None, audio_quality=None):
             return None
 
     except Exception as e:
-        _log(f"Error downloading audio: {e}")
+        _log(f"Error downloading audio: {type(e).__name__}: {e}")
+        _log(traceback.format_exc())
         _log("\nTroubleshooting tips:")
         _log("1. Update yt-dlp: pip install --upgrade yt-dlp")
         _log("2. Some videos may be restricted or unavailable")
         _log("3. Try using --audio-only flag if transcript works")
         return None
+
+
+def _run_download_attempts(video_url, attempts):
+    """Run each (description, ydl_opts) attempt until one succeeds.
+
+    Falls back on any exception rather than just DownloadError. Post-
+    processing with the bundled Android ffmpeg can fail in ways that don't
+    surface as a clean yt-dlp error, and a file in a less convenient format
+    beats no file at all. The last attempt's failure propagates.
+
+    Each failure is logged with its traceback, since the app only shows
+    str(e) otherwise, which is rarely enough to locate the cause.
+    """
+    last_index = len(attempts) - 1
+    for index, (description, opts) in enumerate(attempts):
+        _log(f"Trying {description}...")
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(video_url, download=True)
+        except Exception as e:
+            if index == last_index:
+                raise
+            _log(f"{description} failed ({type(e).__name__}: {e})")
+            _log(traceback.format_exc())
+            _log("Falling back to next option")
+
+
+def _merge_ydl_opts(output_dir, video_quality, ffmpeg_path, stream_copy):
+    """Build yt-dlp options for merging separate video and audio streams.
+
+    With stream_copy, the selection is restricted to streams that already
+    belong in an MP4 — H.264 video and AAC audio — so ffmpeg only has to
+    copy them into the container. Re-encoding the audio instead costs
+    minutes of CPU on a phone for a long video, and loses a little quality.
+
+    Without it, any streams are accepted and the audio is re-encoded to
+    AAC, which is needed when YouTube only offers Opus/WebM audio (Opus
+    cannot go into an MP4 untouched).
+    """
+    if stream_copy:
+        video_format = (
+            f'bestvideo[height<={video_quality}][ext=mp4][vcodec^=avc1]'
+            f'+bestaudio[ext=m4a][acodec^=mp4a]'
+        )
+        ffmpeg_args = ['-c:v', 'copy', '-c:a', 'copy']
+    else:
+        video_format = f'bestvideo[height<={video_quality}]+bestaudio/best'
+        ffmpeg_args = ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
+
+    opts = {
+        'format': video_format,
+        'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
+        'quiet': True if IS_ANDROID else config.YT_DLP_QUIET,
+        'no_warnings': True if IS_ANDROID else config.YT_DLP_NO_WARNINGS,
+        'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
+        'postprocessors': [{
+            'key': 'FFmpegVideoRemuxer',
+            'preferedformat': config.VIDEO_FORMAT,
+        }, {
+            'key': 'FFmpegMetadata',
+        }],
+        'postprocessor_args': {'ffmpeg': ffmpeg_args},
+    }
+    if IS_ANDROID:
+        opts['ffmpeg_location'] = ffmpeg_path
+        opts['noprogress'] = True
+    return opts
 
 
 def download_video(video_url, output_dir=None, video_quality=None):
@@ -372,35 +446,20 @@ def download_video(video_url, output_dir=None, video_quality=None):
                 'no_warnings': True,
                 'noprogress': True,  # Disable progress bar that causes stdout issues
             }
+            attempts = [('pre-merged format', ydl_opts)]
         else:
             # Use ffmpeg for merging and conversion (bundled binary on
             # Android, PATH on desktop) so any requested quality can be
             # assembled from YouTube's separate video-only + audio-only streams.
-            _log("Merging and converting video with ffmpeg" + (" (bundled)" if IS_ANDROID else ""))
-            ydl_opts = {
-                # Download best video up to specified quality + best audio, merge them
-                'format': f'bestvideo[height<={video_quality}]+bestaudio/best',
-                'outtmpl': os.path.join(output_dir, f'%(title)s_video_{video_quality}p.%(ext)s'),
-                'quiet': True if IS_ANDROID else config.YT_DLP_QUIET,
-                'no_warnings': True if IS_ANDROID else config.YT_DLP_NO_WARNINGS,
-                'merge_output_format': config.VIDEO_FORMAT,  # Merge to MP4
-                'postprocessors': [{
-                    'key': 'FFmpegVideoRemuxer',
-                    'preferedformat': config.VIDEO_FORMAT,
-                }, {
-                    'key': 'FFmpegMetadata',
-                }],
-                # Force re-encode audio to AAC for better MP4 compatibility
-                'postprocessor_args': {
-                    'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
-                },
-            }
-            if IS_ANDROID:
-                ydl_opts['ffmpeg_location'] = ffmpeg_path
-                ydl_opts['noprogress'] = True
+            _log("Merging video with ffmpeg" + (" (bundled)" if IS_ANDROID else ""))
+            attempts = [
+                ('stream copy (H.264 + AAC)', _merge_ydl_opts(
+                    output_dir, video_quality, ffmpeg_path, stream_copy=True)),
+                ('re-encoding audio to AAC', _merge_ydl_opts(
+                    output_dir, video_quality, ffmpeg_path, stream_copy=False)),
+            ]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
+        info = _run_download_attempts(video_url, attempts)
 
         # Ask yt-dlp for the exact file it wrote (final path after any merge or
         # remux), rather than reconstructing the name from the title.
@@ -431,7 +490,8 @@ def download_video(video_url, output_dir=None, video_quality=None):
             return None
 
     except Exception as e:
-        _log(f"Error downloading video: {e}")
+        _log(f"Error downloading video: {type(e).__name__}: {e}")
+        _log(traceback.format_exc())
         _log("\nTroubleshooting tips:")
         _log("1. Update yt-dlp: pip install --upgrade yt-dlp")
         _log("2. Some videos may be restricted or unavailable")
