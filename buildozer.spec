@@ -66,6 +66,12 @@ android.minapi = 21
 # (str) Android NDK version to use
 android.ndk = 25b
 
+# (bool) Automatically accept the Android SDK licence agreements.
+# Required for unattended builds (CI): without it sdkmanager prompts
+# "Accept? (y/N)", skips installing build-tools, and the build then
+# fails with "Aidl not found, please install it."
+android.accept_sdk_license = True
+
 # (bool) Use --private data storage (True) or --dir public storage (False)
 android.private_storage = True
 
