@@ -33,17 +33,33 @@ jobs:
       - name: Install buildozer
         run: pip install --upgrade buildozer cython
 
+      # restore-keys lets an edit to buildozer.spec fall back to the previous
+      # cache instead of rebuilding the SDK/NDK and every recipe from scratch.
       - name: Cache buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
           key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-global-
 
       - name: Cache buildozer project directory (Android SDK/NDK/build cache)
         uses: actions/cache@v4
         with:
           path: .buildozer
           key: buildozer-project-${{ hashFiles('buildozer.spec') }}
+          restore-keys: buildozer-project-
+
+      # Keep one debug signing key across builds. Gradle otherwise generates a
+      # fresh ~/.android/debug.keystore on every runner, and Android refuses to
+      # install an update whose signature differs from the installed app, so
+      # each new APK would need the old one uninstalled first. This is the
+      # standard debug keystore (well-known default password/alias, signs debug
+      # builds only) — not a release key, which would belong in Secrets.
+      - name: Cache Android debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore
 
       - name: Build APK
         run: buildozer android debug
